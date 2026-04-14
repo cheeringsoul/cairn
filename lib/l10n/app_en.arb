@@ -1,0 +1,345 @@
+{
+  "@@locale": "en",
+
+  "appName": "Cairn",
+
+  "getStarted": "Get started",
+  "welcomeDescription": "A personal LLM client that doubles as an English companion. You bring your own API key — everything stays on this device.",
+  "chooseProvider": "Choose an AI provider",
+  "pickProviderHint": "Pick any provider you have an API key for.",
+  "youProvideBaseUrl": "You provide the base URL",
+  "apiKeyStoredLocally": "Stored in your device keychain. Never sent anywhere else.",
+  "apiKey": "API key",
+  "baseUrl": "Base URL",
+  "fetchModels": "Fetch models",
+  "selectAModel": "Select a model",
+  "modelsAvailable": "{count} models available from {provider}",
+  "@modelsAvailable": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "provider": {"type": "String"}
+    }
+  },
+  "verifyAndContinue": "Verify and continue",
+  "apiKeyRequired": "API key is required.",
+  "baseUrlRequired": "Base URL is required.",
+  "couldNotFetchModels": "Could not fetch models. Check key and URL.",
+  "networkError": "Network error: {error}",
+  "@networkError": {
+    "placeholders": { "error": {"type": "String"} }
+  },
+  "unexpectedError": "Unexpected error: {error}",
+  "@unexpectedError": {
+    "placeholders": { "error": {"type": "String"} }
+  },
+  "pleaseSelectModel": "Please select a model.",
+  "apiKeyInvalid": "API key is invalid or unauthorized.",
+  "endpointNotFound": "Endpoint not found. Check the base URL.",
+  "rateLimited": "Rate limited or out of credit on this provider.",
+  "providerIssues": "Provider is having issues. Try again in a moment.",
+  "requestFailed": "Request failed with status {status}.",
+  "@requestFailed": {
+    "placeholders": { "status": {"type": "int"} }
+  },
+
+  "profile": "Profile",
+  "tapToSetName": "Tap to set name",
+  "displayName": "Display Name",
+  "yourName": "Your name",
+  "aboutMe": "About me",
+  "aboutMePlaceholder": "Tell AI a bit about yourself — your background, interests, or goals. This helps every conversation feel more relevant to you.",
+  "aboutMeHint": "I'm a backend engineer working on...",
+  "conversations": "Conversations",
+  "messages": "Messages",
+  "saved": "Saved",
+
+  "library": "Library",
+  "savedKnowledgeItems": "Saved knowledge items",
+  "connections": "Connections",
+  "knowledgeGraphClusters": "Knowledge graph clusters",
+  "review": "Review",
+  "itemsDue": "{count} items due",
+  "@itemsDue": {
+    "placeholders": { "count": {"type": "int"} }
+  },
+  "allCaughtUp": "All caught up",
+  "knowledgeReport": "Report",
+  "statsAboutKnowledge": "Stats about your saved knowledge",
+  "providers": "Providers",
+  "providersConfigured": "{count} provider{count, plural, =1{} other{s}} configured",
+  "@providersConfigured": {
+    "placeholders": { "count": {"type": "int"} }
+  },
+
+  "personas": "Personas",
+  "noCustomInstruction": "No custom instruction",
+  "addPersona": "Add persona",
+  "newPersona": "New persona",
+  "editPersona": "Edit persona",
+  "deletePersona": "Delete persona?",
+  "cannotBeUndone": "This cannot be undone.",
+  "cancel": "Cancel",
+  "save": "Save",
+  "delete": "Delete",
+  "create": "Create",
+  "pickAnIcon": "Pick an icon",
+  "name": "Name",
+  "systemInstruction": "System instruction",
+  "customInstructionsHint": "Custom instructions appended to every message...",
+  "leaveEmptyForGeneral": "Leave empty for a general-purpose assistant.",
+
+  "theme": "Theme",
+
+  "explainPromptTemplate": "Explain prompt template",
+  "explainPromptHint": "Use {word} as a placeholder for the looked-up word.",
+  "@explainPromptHint": {
+    "placeholders": { "word": {"type": "String"} }
+  },
+
+  "apiUsage": "API Usage",
+  "apiCalls": "API calls",
+  "inputTokens": "Input tokens",
+  "outputTokens": "Output tokens",
+  "addProvider": "Add provider",
+  "deleteProvider": "Delete provider?",
+  "removeProviderMessage": "Remove \"{name}\" from this device.",
+  "@removeProviderMessage": {
+    "placeholders": { "name": {"type": "String"} }
+  },
+  "setAsDefault": "Set as default",
+  "connectionTimedOut": "Connection timed out. Check the base URL and try again.",
+  "validationFailed": "Validation failed: {error}",
+  "@validationFailed": {
+    "placeholders": { "error": {"type": "String"} }
+  },
+  "validating": "Validating...",
+  "kind": "Kind",
+
+  "selectModel": "Select Model",
+  "refreshModels": "Refresh models",
+
+  "welcomeToCairn": "Welcome to Cairn",
+  "typeMessageBelow": "Type a message below",
+  "untitled": "Untitled",
+  "messageHint": "Message...",
+  "savedToLibrary": "Saved to Library",
+  "view": "View",
+
+  "searchConversations": "Search conversations...",
+  "recent": "Recent",
+  "chatHistory": "Chat History",
+  "noConversationsYet": "No conversations yet",
+  "newChat": "New Chat",
+
+  "saveToLibrary": "Save to Library",
+  "regenerate": "Regenerate",
+  "copy": "Copy",
+  "editAndResend": "Edit & resend",
+  "editMessage": "Edit message",
+  "editWillRerun": "Editing will re-run the reply from this turn.",
+  "saveAndResend": "Save & resend",
+
+  "noConnectionsYet": "No connections yet",
+  "saveMoreForConnections": "Save more items to discover knowledge connections.",
+  "refresh": "Refresh",
+
+  "remaining": "{count} remaining",
+  "@remaining": {
+    "placeholders": { "count": {"type": "int"} }
+  },
+  "allCaughtUpTitle": "All caught up!",
+  "noItemsDueForReview": "No items due for review right now.",
+  "enableReviewForAll": "Enable review for all items",
+  "viewFullItem": "View full item",
+  "relatedKnowledge": "Related knowledge",
+  "knowledgeHubs": "Knowledge hubs",
+  "topTags": "Top tags",
+  "isolatedKnowledge": "Isolated knowledge",
+  "similarityPercent": "{percent}% match",
+  "@similarityPercent": {
+    "placeholders": { "percent": {"type": "int"} }
+  },
+  "tapToReveal": "Tap to reveal",
+  "skip": "Next",
+  "gotIt": "Got it",
+  "forgot": "Forgot",
+  "hard": "Hard",
+  "good": "Good",
+  "easy": "Easy",
+  "stopReview": "Don't review",
+  "graduated": "Mastered",
+  "intervalDays": "{days}d",
+  "@intervalDays": {
+    "placeholders": { "days": {"type": "int"} }
+  },
+
+  "selectedCount": "{count} selected",
+  "@selectedCount": {
+    "placeholders": { "count": {"type": "int"} }
+  },
+  "deselectAll": "Deselect all",
+  "selectAll": "Select all",
+  "saveFromUrl": "Save from URL",
+  "importMarkdown": "Import markdown",
+  "exportAsMarkdown": "Export as Markdown",
+  "exportAsJson": "Export as JSON",
+  "batchDelete": "Batch delete",
+  "quickNote": "Quick Note",
+  "searchHint": "Search title, body, notes...",
+  "all": "All",
+  "vocab": "Vocab",
+  "insight": "Insight",
+  "action": "Action",
+  "fact": "Fact",
+  "question": "Question",
+  "noItemsToExport": "No items to export",
+  "importedCount": "Imported {count} item(s)",
+  "@importedCount": {
+    "placeholders": { "count": {"type": "int"} }
+  },
+  "deleteCountItems": "Delete {count} item(s)?",
+  "@deleteCountItems": {
+    "placeholders": { "count": {"type": "int"} }
+  },
+  "fetch": "Fetch",
+  "fetchingPage": "Fetching page...",
+  "savedTitle": "Saved: {title}",
+  "@savedTitle": {
+    "placeholders": { "title": {"type": "String"} }
+  },
+  "failedError": "Failed: {error}",
+  "@failedError": {
+    "placeholders": { "error": {"type": "String"} }
+  },
+  "titleOptional": "Title (optional)",
+  "writeYourNote": "Write your note...",
+  "deleteFolderTitle": "Delete \"{folder}\"?",
+  "@deleteFolderTitle": {
+    "placeholders": { "folder": {"type": "String"} }
+  },
+  "deleteFolderMessage": "Items in this folder will be moved to \"All\". This cannot be undone.",
+  "analyzing": "Analyzing...",
+  "noMatches": "No matches",
+  "messageMatches": "In messages",
+  "geminiRecommended": "Recommended: Qwen (Free tier)",
+  "geminiRecommendedDesc": "Easy signup in China. Free tokens, supports both chat and knowledge-base semantic search.",
+  "getFreApiKey": "Get free API key",
+  "nothingSavedYet": "Nothing saved yet",
+  "tryDifferentKeyword": "Try a different keyword.",
+  "longPressToSave": "Long-press an AI reply in chat to save it.",
+  "justNow": "just now",
+  "minutesAgo": "{count}m ago",
+  "@minutesAgo": {
+    "placeholders": { "count": {"type": "int"} }
+  },
+  "hoursAgo": "{count}h ago",
+  "@hoursAgo": {
+    "placeholders": { "count": {"type": "int"} }
+  },
+  "daysAgo": "{count}d ago",
+  "@daysAgo": {
+    "placeholders": { "count": {"type": "int"} }
+  },
+
+  "deleteItem": "Delete item?",
+  "copyAsMarkdown": "Copy as markdown",
+  "shareAsFile": "Share as file",
+  "title": "Title",
+  "myNotes": "My notes",
+  "edit": "Edit",
+  "addNotesHint": "Add your own examples, memory hooks, context...",
+  "saveChanges": "Save changes",
+  "aiAnalyzingTags": "AI is analyzing tags...",
+  "source": "Source",
+  "tapToOpenSource": "Tap to open source conversation",
+  "copiedToClipboard": "Copied to clipboard",
+
+  "week": "Week",
+  "month": "Month",
+  "allTime": "All time",
+  "itemsSaved": "Items saved",
+  "totalTags": "Tags",
+  "totalEntities": "Entities",
+  "typeDistribution": "Type distribution",
+  "byType": "By Type",
+  "entitiesCount": "Entities ({count})",
+  "@entitiesCount": {
+    "placeholders": { "count": {"type": "int"} }
+  },
+  "topTags": "Top Tags",
+
+  "offlineDictNotLoaded": "Offline dictionary not loaded. Use AI explanation below.",
+  "wordNotFoundInDict": "Not found in offline dictionary. Try AI explanation below.",
+  "aiDetailedExplanation": "AI detailed explanation",
+  "tokensCount": "{count} tokens",
+  "@tokensCount": {
+    "placeholders": { "count": {"type": "String"} }
+  },
+
+  "aboutCairnTagline": "Stack your knowledge, one stone at a time.",
+  "aboutCairnBody": "Cairn is a privacy-first AI client that learns who you are and helps you build a personal knowledge base — one conversation at a time.\n\nTalk to any AI, your way. Bring your own API keys. Switch between providers and models freely. Set up AI personas with custom instructions — a writing coach, a coding mentor, a language partner — each one remembers how to talk to you.\n\nSave what matters. Long-press any AI reply to save it. Cairn automatically tags and categorizes your saved knowledge. Over time, your library becomes a searchable second brain.\n\nNever forget. Built-in spaced repetition surfaces saved items right when you're about to forget them. Knowledge isn't useful if it fades — Cairn makes sure it sticks.\n\nSee the bigger picture. The knowledge graph finds hidden connections between things you've saved — linking concepts you didn't realize were related.\n\nLearn English along the way. Tap any word in a conversation for instant lookup and AI-powered explanations. It's not a separate app — it's woven into how you already use AI.\n\nYour data stays yours. No accounts. No cloud sync. No tracking. API keys are stored in your device's secure keychain. Everything lives on your phone.",
+  "madeWithLove": "Stack stones. Build knowledge. Make it yours.",
+  "aboutAndFeedback": "About & Feedback",
+  "sendFeedback": "Send feedback",
+  "reportIssue": "Report an issue",
+  "rateApp": "Rate the app",
+  "openSourceLicenses": "Open source licenses",
+  "privacyPolicy": "Privacy policy",
+  "termsOfService": "Terms of service",
+  "version": "Version {version}",
+  "@version": {
+    "placeholders": { "version": {"type": "String"} }
+  },
+  "tools": "Tools",
+  "functionCalling": "Function Calling",
+  "functionCallingSubtitle": "Allow AI to fetch real-time information",
+  "aiPersonalization": "AI Personalization",
+  "aiPersonalizationSubtitle": "About me & personas",
+  "language": "Language",
+  "systemDefault": "System default",
+  "lookup": "Lookup",
+  "askFollowUp": "Ask a follow-up...",
+  "customModel": "Custom Model",
+  "newConversation": "New conversation",
+  "exportFailed": "Export failed: {error}",
+  "@exportFailed": {
+    "placeholders": { "error": {"type": "String"} }
+  },
+  "importFailed": "Import failed: {error}",
+  "@importFailed": {
+    "placeholders": { "error": {"type": "String"} }
+  },
+
+  "feeds": "Feeds",
+  "signals": "Signals",
+  "dailyBrief": "Daily Brief",
+  "addFeed": "Add Feed",
+  "enterFeedUrl": "Enter RSS or website URL",
+  "fetchingFeed": "Fetching feed…",
+  "feedAdded": "Feed added",
+  "noFeeds": "No feeds yet",
+  "addFeedsHint": "Add RSS feeds to start receiving signals",
+  "noSignals": "No signals",
+  "noSignalsHint": "Important signals will appear here",
+  "noBriefItems": "Nothing in today's brief",
+  "noBriefHint": "New articles will appear after feeds are fetched",
+  "readOriginal": "Read original",
+  "saveToLibrary": "Save to Library",
+  "dismiss": "Dismiss",
+  "act": "Act",
+  "readAction": "Read",
+  "skimAction": "Skim",
+  "signalCount": "{count} signals",
+  "@signalCount": {
+    "placeholders": { "count": {"type": "int"} }
+  },
+  "refreshing": "Refreshing feeds…",
+  "strategiesLabel": "Strategies",
+  "addStrategy": "Add Strategy",
+  "strategyName": "Strategy name",
+  "strategyDescription": "Describe what to watch for",
+  "feedAddFailed": "Failed to add feed: {error}",
+  "@feedAddFailed": {
+    "placeholders": { "error": {"type": "String"} }
+  }
+}
