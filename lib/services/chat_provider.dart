@@ -85,6 +85,16 @@ class ChatProvider extends ChangeNotifier {
   /// Consumed (cleared) by the UI once it scrolls.
   String? scrollToMessageId;
 
+  /// Id of the user message whose assistant reply failed to generate.
+  /// UI reads this to render a small retry button under that bubble.
+  /// Cleared when the user retries or starts a new turn.
+  String? failedUserMsgId;
+
+  /// Texts queued while a previous send is still streaming. Rendered
+  /// as user bubbles after the in-progress draft; flushed one at a
+  /// time once [sending] drops to false.
+  final List<String> pendingQueue = <String>[];
+
   /// True when NO provider in settings has embedding capability AND the
   /// current conversation's user-question transcript is approaching the
   /// compress threshold. UI reads this to show a "start a new
@@ -134,6 +144,8 @@ class ChatProvider extends ChangeNotifier {
     loading = true;
     hasMoreOlderMessages = false;
     loadingMoreMessages = false;
+    failedUserMsgId = null;
+    pendingQueue.clear();
     notifyListeners();
 
     // Load only the most recent page. For conversations shorter
@@ -214,6 +226,8 @@ class ChatProvider extends ChangeNotifier {
     _currentPersonaId = null;
     messages = const [];
     lastError = null;
+    failedUserMsgId = null;
+    pendingQueue.clear();
     autoSavedMsgIds.clear();
     hasMoreOlderMessages = false;
     loadingMoreMessages = false;
@@ -228,9 +242,19 @@ class ChatProvider extends ChangeNotifier {
   // ---- sending ----
 
   Future<void> sendMessage(String text) async {
-    if (sending) return;
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
+    if (sending) {
+      // Already processing a previous turn — queue this for later
+      // rather than dropping it. Rendered in the chat list as a
+      // ghost user bubble after the current draft.
+      pendingQueue.add(trimmed);
+      notifyListeners();
+      return;
+    }
+    // Starting a fresh turn clears any retry-pending state from the
+    // previous failure.
+    failedUserMsgId = null;
 
     final (provider, model) = StreamingChatMixin.resolveProvider(_settings);
 
@@ -318,6 +342,7 @@ class ChatProvider extends ChangeNotifier {
             providerId: provider.id, model: model, kind: UsageKind.chat),
         onError: (err) {
           lastError = err;
+          failedUserMsgId = userMsg.id;
         },
         toolRegistry: enabledNames.isNotEmpty ? _toolRegistry : null,
         enabledToolNames: enabledNames,
@@ -345,11 +370,49 @@ class ChatProvider extends ChangeNotifier {
       }
     } catch (e) {
       lastError = '$e';
+      failedUserMsgId = currentConversationId != null && messages.isNotEmpty &&
+              messages.last.role == MessageRole.user
+          ? messages.last.id
+          : failedUserMsgId;
     } finally {
       sending = false;
       notifyListeners();
       await loadConversations();
+      _flushQueue();
     }
+  }
+
+  /// Pop the next queued text (if any) and send it. Called at the end
+  /// of every turn. Only flushes when the previous turn succeeded —
+  /// on failure the queue stays intact so the user can retry first.
+  void _flushQueue() {
+    if (sending) return;
+    if (pendingQueue.isEmpty) return;
+    if (failedUserMsgId != null) return;
+    final next = pendingQueue.removeAt(0);
+    Future.microtask(() => sendMessage(next));
+  }
+
+  /// Retry the last failed user turn. Drops the previously-persisted
+  /// user message and re-runs [sendMessage] from scratch so the
+  /// existing pipeline (recall, tools, streaming) is reused as-is.
+  Future<void> retryFailedSend() async {
+    if (sending) return;
+    final failedId = failedUserMsgId;
+    if (failedId == null) return;
+    final idx = messages.indexWhere((m) => m.id == failedId);
+    if (idx < 0) {
+      failedUserMsgId = null;
+      notifyListeners();
+      return;
+    }
+    final text = messages[idx].content;
+    await _convDao.deleteMessage(failedId);
+    messages = messages.where((m) => m.id != failedId).toList();
+    failedUserMsgId = null;
+    lastError = null;
+    notifyListeners();
+    await sendMessage(text);
   }
 
   /// Delete the last assistant message and re-request a reply for the

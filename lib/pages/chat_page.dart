@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
@@ -43,6 +44,7 @@ class ChatPage extends StatefulWidget {
 
 class _ChatPageState extends State<ChatPage> {
   final _controller = TextEditingController();
+  final _composerFocus = FocusNode();
   final _scrollController = ScrollController();
   final Set<String> _savedMsgIds = {};
   final Map<String, GlobalKey> _messageKeys = {};
@@ -209,11 +211,24 @@ class _ChatPageState extends State<ChatPage> {
     context.read<ChatProvider>().autoSavedMsgIds.remove(msg.id);
   }
 
+  /// Drop focus from the composer and proactively hide the soft
+  /// keyboard. Calling [FocusNode.unfocus] alone isn't always enough
+  /// on Android — if focus moved while the keyboard was up (e.g. a
+  /// reply stream started, the user tapped the drawer hamburger)
+  /// the IME can linger or reappear when a new route is pushed.
+  /// [SystemChannels.textInput] closes the IME regardless of which
+  /// node Flutter currently tracks as focused.
+  void _dismissKeyboard() {
+    _composerFocus.unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
+    SystemChannels.textInput.invokeMethod('TextInput.hide');
+  }
+
   void _send() {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
     _controller.clear();
-    FocusScope.of(context).unfocus();
+    _dismissKeyboard();
     context.read<ChatProvider>().sendMessage(text);
     _scrollToBottom();
   }
@@ -246,6 +261,7 @@ class _ChatPageState extends State<ChatPage> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _controller.dispose();
+    _composerFocus.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -279,6 +295,19 @@ class _ChatPageState extends State<ChatPage> {
     final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
+        leading: Builder(
+          builder: (ctx) => IconButton(
+            icon: const Icon(Icons.menu_rounded),
+            onPressed: () {
+              // Hide the IME before the drawer animation starts —
+              // if focus is still on the composer TextField when a
+              // new route is pushed, Flutter re-asserts focus once
+              // the drawer lays out and the soft keyboard pops.
+              _dismissKeyboard();
+              Scaffold.of(ctx).openDrawer();
+            },
+          ),
+        ),
         title: Text(l10n.appName,
             style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
         centerTitle: true,
@@ -292,7 +321,10 @@ class _ChatPageState extends State<ChatPage> {
         ],
       ),
       onDrawerChanged: (isOpened) {
-        if (isOpened) FocusScope.of(context).unfocus();
+        // Covers the edge-swipe path (bypasses the leading icon) and
+        // the close direction — restoring focus to the composer when
+        // a route pops would pop the keyboard back up.
+        _dismissKeyboard();
       },
       drawer: AppNavDrawer(
         currentIndex: widget.currentIndex,
@@ -379,12 +411,13 @@ class _ChatPageState extends State<ChatPage> {
   Widget _buildMessageList(ChatProvider provider) {
     final showHeader = provider.hasMoreOlderMessages;
     final headerCount = showHeader ? 1 : 0;
+    final pendingCount = provider.pendingQueue.length;
 
     return ListView.builder(
       controller: _scrollController,
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-      itemCount: provider.messages.length + headerCount,
+      itemCount: provider.messages.length + headerCount + pendingCount,
       itemBuilder: (_, i) {
         if (showHeader && i == 0) {
           return Padding(
@@ -401,6 +434,12 @@ class _ChatPageState extends State<ChatPage> {
           );
         }
         final msgIndex = i - headerCount;
+        if (msgIndex >= provider.messages.length) {
+          // Queued-but-not-yet-sent user bubble (appears after the
+          // current streaming draft).
+          final qIdx = msgIndex - provider.messages.length;
+          return _PendingQueueBubble(text: provider.pendingQueue[qIdx]);
+        }
         final msg = provider.messages[msgIndex];
         final isLastAssistant = msg.role == 'assistant' &&
             msgIndex == provider.messages.length - 1 &&
@@ -408,6 +447,45 @@ class _ChatPageState extends State<ChatPage> {
         final key = _messageKeys.putIfAbsent(msg.id, () => GlobalKey());
         final isSaved = _savedMsgIds.contains(msg.id) ||
             provider.autoSavedMsgIds.contains(msg.id);
+        final showRetry = provider.failedUserMsgId == msg.id;
+        if (showRetry) {
+          return Column(
+            key: key,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              MessageBubble(
+                message: msg,
+                isLastAssistant: isLastAssistant,
+                isSaved: isSaved,
+                onDelete: () => provider.deleteMessage(msg.id),
+                onEdit: msg.role == 'user'
+                    ? (text) => provider.editUserMessage(msg.id, text)
+                    : null,
+                onRegenerate: null,
+                onSave: null,
+                onRemoveSave: null,
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: 2, right: 4, bottom: 4),
+                child: TextButton.icon(
+                  onPressed: provider.sending
+                      ? null
+                      : () => provider.retryFailedSend(),
+                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  label: const Text('重试', style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    minimumSize: const Size(0, 28),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    foregroundColor:
+                        Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
         return MessageBubble(
           key: key,
           message: msg,
@@ -661,6 +739,7 @@ class _ChatPageState extends State<ChatPage> {
           Expanded(
             child: TextField(
               controller: _controller,
+              focusNode: _composerFocus,
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => _send(),
               minLines: 1,
@@ -683,11 +762,12 @@ class _ChatPageState extends State<ChatPage> {
           ),
           const SizedBox(width: 8),
           IconButton(
-            onPressed: provider.sending ? null : _send,
+            // While sending, pressing still queues the new text —
+            // the provider short-circuits into pendingQueue and the
+            // flush runs when the current turn finishes.
+            onPressed: _send,
             style: IconButton.styleFrom(
-              backgroundColor: provider.sending
-                  ? cs.onSurface.withValues(alpha: 0.1)
-                  : cs.primary,
+              backgroundColor: cs.primary,
               foregroundColor: cs.onPrimary,
             ),
             icon: const Icon(Icons.arrow_upward_rounded, size: 22),
@@ -805,6 +885,63 @@ class _EmbeddingMissingBannerState extends State<_EmbeddingMissingBanner> {
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             onPressed: () => setState(() => _dismissed = true),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Visual placeholder for a user message that has been queued while a
+/// prior turn is still streaming. Rendered like a user bubble but
+/// dimmed + marked with a tiny clock so the user can tell it hasn't
+/// reached the model yet. The actual send fires from
+/// [ChatProvider._flushQueue] once [ChatProvider.sending] drops.
+class _PendingQueueBubble extends StatelessWidget {
+  final String text;
+  const _PendingQueueBubble({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Flexible(
+            child: Opacity(
+              opacity: 0.65,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: cs.primary,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(18),
+                    topRight: Radius.circular(18),
+                    bottomLeft: Radius.circular(18),
+                    bottomRight: Radius.circular(4),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.schedule_rounded,
+                        size: 13,
+                        color: cs.onPrimary.withValues(alpha: 0.7)),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        text,
+                        style: TextStyle(fontSize: 15, color: cs.onPrimary),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ],
       ),
