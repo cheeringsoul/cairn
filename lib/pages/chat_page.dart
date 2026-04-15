@@ -225,11 +225,16 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _send() {
+    final provider = context.read<ChatProvider>();
+    // While the assistant is replying, new sends are blocked — the
+    // user must tap stop first. Keeps the reply/send flow linear so
+    // queued messages can't race a mid-stream abort.
+    if (provider.sending) return;
     final text = _controller.text.trim();
     if (text.isEmpty) return;
     _controller.clear();
     _dismissKeyboard();
-    context.read<ChatProvider>().sendMessage(text);
+    provider.sendMessage(text);
     _scrollToBottom();
   }
 
@@ -411,13 +416,12 @@ class _ChatPageState extends State<ChatPage> {
   Widget _buildMessageList(ChatProvider provider) {
     final showHeader = provider.hasMoreOlderMessages;
     final headerCount = showHeader ? 1 : 0;
-    final pendingCount = provider.pendingQueue.length;
 
     return ListView.builder(
       controller: _scrollController,
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-      itemCount: provider.messages.length + headerCount + pendingCount,
+      itemCount: provider.messages.length + headerCount,
       itemBuilder: (_, i) {
         if (showHeader && i == 0) {
           return Padding(
@@ -434,12 +438,6 @@ class _ChatPageState extends State<ChatPage> {
           );
         }
         final msgIndex = i - headerCount;
-        if (msgIndex >= provider.messages.length) {
-          // Queued-but-not-yet-sent user bubble (appears after the
-          // current streaming draft).
-          final qIdx = msgIndex - provider.messages.length;
-          return _PendingQueueBubble(text: provider.pendingQueue[qIdx]);
-        }
         final msg = provider.messages[msgIndex];
         final isLastAssistant = msg.role == 'assistant' &&
             msgIndex == provider.messages.length - 1 &&
@@ -762,15 +760,23 @@ class _ChatPageState extends State<ChatPage> {
           ),
           const SizedBox(width: 8),
           IconButton(
-            // While sending, pressing still queues the new text —
-            // the provider short-circuits into pendingQueue and the
-            // flush runs when the current turn finishes.
-            onPressed: _send,
+            onPressed: provider.sending
+                ? provider.abortCurrentReply
+                : _send,
             style: IconButton.styleFrom(
-              backgroundColor: cs.primary,
-              foregroundColor: cs.onPrimary,
+              backgroundColor: provider.sending
+                  ? cs.surfaceContainerHighest
+                  : cs.primary,
+              foregroundColor: provider.sending
+                  ? cs.onSurface
+                  : cs.onPrimary,
             ),
-            icon: const Icon(Icons.arrow_upward_rounded, size: 22),
+            icon: Icon(
+              provider.sending
+                  ? Icons.stop_rounded
+                  : Icons.arrow_upward_rounded,
+              size: 22,
+            ),
           ),
         ],
       ),
@@ -885,63 +891,6 @@ class _EmbeddingMissingBannerState extends State<_EmbeddingMissingBanner> {
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             onPressed: () => setState(() => _dismissed = true),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Visual placeholder for a user message that has been queued while a
-/// prior turn is still streaming. Rendered like a user bubble but
-/// dimmed + marked with a tiny clock so the user can tell it hasn't
-/// reached the model yet. The actual send fires from
-/// [ChatProvider._flushQueue] once [ChatProvider.sending] drops.
-class _PendingQueueBubble extends StatelessWidget {
-  final String text;
-  const _PendingQueueBubble({required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Flexible(
-            child: Opacity(
-              opacity: 0.65,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: cs.primary,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(18),
-                    topRight: Radius.circular(18),
-                    bottomLeft: Radius.circular(18),
-                    bottomRight: Radius.circular(4),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.schedule_rounded,
-                        size: 13,
-                        color: cs.onPrimary.withValues(alpha: 0.7)),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        text,
-                        style: TextStyle(fontSize: 15, color: cs.onPrimary),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
           ),
         ],
       ),

@@ -54,6 +54,26 @@ class ChatProvider extends ChangeNotifier {
   bool sending = false;
   String? lastError;
 
+  /// Cancel handle for the in-flight assistant reply. Non-null while
+  /// [sending] is true. UI stop button calls [abortCurrentReply].
+  CancelToken? _activeCancelToken;
+
+  bool get canAbort => sending && _activeCancelToken != null;
+
+  /// Abort the currently-streaming assistant reply. Partial text is
+  /// kept and committed as the final message in the background —
+  /// [sending] flips to false immediately so the composer unlocks
+  /// without waiting for the DB write to finish.
+  void abortCurrentReply() {
+    final token = _activeCancelToken;
+    if (token == null) return;
+    token.cancel();
+    sending = false;
+    activeToolStatus = null;
+    _activeCancelToken = null;
+    notifyListeners();
+  }
+
   /// Non-null while tools are being executed during streaming.
   ToolStatus? activeToolStatus;
 
@@ -89,11 +109,6 @@ class ChatProvider extends ChangeNotifier {
   /// UI reads this to render a small retry button under that bubble.
   /// Cleared when the user retries or starts a new turn.
   String? failedUserMsgId;
-
-  /// Texts queued while a previous send is still streaming. Rendered
-  /// as user bubbles after the in-progress draft; flushed one at a
-  /// time once [sending] drops to false.
-  final List<String> pendingQueue = <String>[];
 
   /// True when NO provider in settings has embedding capability AND the
   /// current conversation's user-question transcript is approaching the
@@ -145,7 +160,6 @@ class ChatProvider extends ChangeNotifier {
     hasMoreOlderMessages = false;
     loadingMoreMessages = false;
     failedUserMsgId = null;
-    pendingQueue.clear();
     notifyListeners();
 
     // Load only the most recent page. For conversations shorter
@@ -227,7 +241,6 @@ class ChatProvider extends ChangeNotifier {
     messages = const [];
     lastError = null;
     failedUserMsgId = null;
-    pendingQueue.clear();
     autoSavedMsgIds.clear();
     hasMoreOlderMessages = false;
     loadingMoreMessages = false;
@@ -244,14 +257,10 @@ class ChatProvider extends ChangeNotifier {
   Future<void> sendMessage(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
-    if (sending) {
-      // Already processing a previous turn — queue this for later
-      // rather than dropping it. Rendered in the chat list as a
-      // ghost user bubble after the current draft.
-      pendingQueue.add(trimmed);
-      notifyListeners();
-      return;
-    }
+    // New sends while a reply is streaming are blocked at the UI
+    // layer — the send button becomes a stop button. Defensive guard
+    // here keeps a second call from racing the in-flight turn.
+    if (sending) return;
     // Starting a fresh turn clears any retry-pending state from the
     // previous failure.
     failedUserMsgId = null;
@@ -260,6 +269,8 @@ class ChatProvider extends ChangeNotifier {
 
     sending = true;
     lastError = null;
+    final token = CancelToken();
+    _activeCancelToken = token;
 
     try {
       // Create the conversation row on first send.
@@ -334,25 +345,33 @@ class ChatProvider extends ChangeNotifier {
         provider: provider,
         model: model,
         draftId: draftId,
+        // UI callbacks no-op once the turn is aborted — abort flips
+        // sending=false immediately and the partial commit continues
+        // in the background; we must not overwrite whatever the user
+        // has moved on to (a new turn's messages/tool status/error).
         onMessagesChanged: (msgs) {
+          if (token.isCancelled) return;
           messages = msgs;
           notifyListeners();
         },
         onUsage: (u) => _settings.recordUsage(u,
             providerId: provider.id, model: model, kind: UsageKind.chat),
         onError: (err) {
+          if (token.isCancelled) return;
           lastError = err;
           failedUserMsgId = userMsg.id;
         },
         toolRegistry: enabledNames.isNotEmpty ? _toolRegistry : null,
         enabledToolNames: enabledNames,
         onToolStatus: (status) {
+          if (token.isCancelled) return;
           activeToolStatus = status.kind == ToolStatusKind.done ? null : status;
           notifyListeners();
         },
         hasEmbeddingFallback: hasEmbeddingFallback,
+        cancelToken: token,
       );
-      activeToolStatus = null;
+      if (!token.isCancelled) activeToolStatus = null;
 
       // Auto-save the assistant reply to the library when it carries a
       // cairn-meta knowledge block that the model marked as worth
@@ -369,28 +388,27 @@ class ChatProvider extends ChangeNotifier {
         ));
       }
     } catch (e) {
-      lastError = '$e';
-      failedUserMsgId = currentConversationId != null && messages.isNotEmpty &&
-              messages.last.role == MessageRole.user
-          ? messages.last.id
-          : failedUserMsgId;
+      if (!token.isCancelled) {
+        lastError = '$e';
+        failedUserMsgId =
+            currentConversationId != null && messages.isNotEmpty &&
+                    messages.last.role == MessageRole.user
+                ? messages.last.id
+                : failedUserMsgId;
+      }
     } finally {
-      sending = false;
-      notifyListeners();
+      // Only clear top-level state when this is still the active
+      // turn. After abortCurrentReply() a new turn may already own
+      // [_activeCancelToken]; we must not clobber its [sending] flag
+      // or token reference when the background partial-commit
+      // eventually returns here.
+      if (identical(_activeCancelToken, token)) {
+        sending = false;
+        _activeCancelToken = null;
+        notifyListeners();
+      }
       await loadConversations();
-      _flushQueue();
     }
-  }
-
-  /// Pop the next queued text (if any) and send it. Called at the end
-  /// of every turn. Only flushes when the previous turn succeeded —
-  /// on failure the queue stays intact so the user can retry first.
-  void _flushQueue() {
-    if (sending) return;
-    if (pendingQueue.isEmpty) return;
-    if (failedUserMsgId != null) return;
-    final next = pendingQueue.removeAt(0);
-    Future.microtask(() => sendMessage(next));
   }
 
   /// Retry the last failed user turn. Drops the previously-persisted

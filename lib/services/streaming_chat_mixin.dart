@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
@@ -15,6 +16,25 @@ import 'tools/tool_registry.dart';
 // ---------------------------------------------------------------------------
 // Tool status — reported to the UI during tool execution.
 // ---------------------------------------------------------------------------
+
+/// Lets callers abort a streaming reply mid-flight. Cancelling keeps
+/// whatever text was produced so far and commits it as the final
+/// assistant message, rather than dropping the draft.
+class CancelToken {
+  bool _cancelled = false;
+  void Function()? _onCancel;
+  bool get isCancelled => _cancelled;
+  void cancel() {
+    if (_cancelled) return;
+    _cancelled = true;
+    _onCancel?.call();
+  }
+
+  void _bind(void Function() onCancel) {
+    _onCancel = onCancel;
+    if (_cancelled) onCancel();
+  }
+}
 
 enum ToolStatusKind { executing, done }
 
@@ -85,6 +105,7 @@ mixin StreamingChatMixin {
     Set<String>? enabledToolNames,
     void Function(ToolStatus status)? onToolStatus,
     bool hasEmbeddingFallback = true,
+    CancelToken? cancelToken,
   }) async {
     List<Message> msgs;
     final String activeDraftId;
@@ -154,32 +175,61 @@ mixin StreamingChatMixin {
       final collectedActionLinks = <Map<String, String>>[];
       const maxToolRounds = 5;
 
+      var aborted = false;
       for (var round = 0; round <= maxToolRounds; round++) {
+        if (cancelToken?.isCancelled ?? false) {
+          aborted = true;
+          break;
+        }
         final pendingToolCalls = <ToolCall>[];
 
-        await for (final event in adapter.streamChat(
+        final completer = Completer<void>();
+        StreamSubscription<StreamEvent>? sub;
+        sub = adapter
+            .streamChat(
           messages: history,
           model: model,
           systemPrompt: systemPrompt,
           tools: toolDefs.isNotEmpty ? toolDefs : null,
           onUsage: onUsage,
-        )) {
-          switch (event) {
-            case TextDelta(:final text):
-              buffer.write(text);
-              final updated = Message(
-                id: activeDraftId,
-                conversationId: conversationId,
-                role: 'assistant',
-                content: buffer.toString(),
-                createdAt: DateTime.now(),
-              );
-              msgs[msgs.length - 1] = updated;
-              onMessagesChanged(msgs);
+        )
+            .listen(
+          (event) {
+            switch (event) {
+              case TextDelta(:final text):
+                buffer.write(text);
+                final updated = Message(
+                  id: activeDraftId,
+                  conversationId: conversationId,
+                  role: 'assistant',
+                  content: buffer.toString(),
+                  createdAt: DateTime.now(),
+                );
+                msgs[msgs.length - 1] = updated;
+                onMessagesChanged(msgs);
 
-            case ToolCallDelta(:final toolCall):
-              pendingToolCalls.add(toolCall);
-          }
+              case ToolCallDelta(:final toolCall):
+                pendingToolCalls.add(toolCall);
+            }
+          },
+          onError: (Object e, StackTrace st) {
+            if (!completer.isCompleted) completer.completeError(e, st);
+          },
+          onDone: () {
+            if (!completer.isCompleted) completer.complete();
+          },
+          cancelOnError: true,
+        );
+        cancelToken?._bind(() {
+          sub?.cancel();
+          if (!completer.isCompleted) completer.complete();
+        });
+
+        await completer.future;
+
+        if (cancelToken?.isCancelled ?? false) {
+          aborted = true;
+          break;
         }
 
         // No tool calls → model finished its text reply.
@@ -243,14 +293,18 @@ mixin StreamingChatMixin {
       // turn's history and makes the model resume the dead task.
       var finalContent = buffer.toString().trim();
       if (finalContent.isEmpty) {
-        onError('No response generated. Please try again.');
+        if (!aborted) {
+          onError('No response generated. Please try again.');
+        }
         onMessagesChanged(
             msgs.where((m) => m.id != activeDraftId).toList());
         return null;
       }
 
       // Append action-link buttons collected from tool results.
-      if (collectedActionLinks.isNotEmpty) {
+      // Skipped on abort — the reply was cut off mid-stream and action
+      // links may reference tool calls that never got to run.
+      if (!aborted && collectedActionLinks.isNotEmpty) {
         final buttons = collectedActionLinks
             .map((l) => '- [${l['label']}](${l['url']})')
             .join('\n');
@@ -280,16 +334,68 @@ mixin StreamingChatMixin {
       onMessagesChanged(msgs);
       return finalContent;
     } on LlmException catch (e) {
-      onError(e.message);
-      onMessagesChanged(
-          msgs.where((m) => m.id != activeDraftId).toList());
-      return null;
+      return await _commitPartialOnError(
+        db: db,
+        conversationId: conversationId,
+        activeDraftId: activeDraftId,
+        msgs: msgs,
+        partial: msgs.last.content,
+        errorMessage: e.message,
+        onMessagesChanged: onMessagesChanged,
+        onError: onError,
+      );
     } catch (e) {
-      onError('$e');
-      onMessagesChanged(
-          msgs.where((m) => m.id != activeDraftId).toList());
+      return await _commitPartialOnError(
+        db: db,
+        conversationId: conversationId,
+        activeDraftId: activeDraftId,
+        msgs: msgs,
+        partial: msgs.last.content,
+        errorMessage: '$e',
+        onMessagesChanged: onMessagesChanged,
+        onError: onError,
+      );
+    }
+  }
+
+  /// Persist whatever the assistant managed to stream before the
+  /// failure, so the user keeps the partial text they already saw in
+  /// the UI. Drops the draft only when nothing was produced at all.
+  static Future<String?> _commitPartialOnError({
+    required AppDatabase db,
+    required String conversationId,
+    required String activeDraftId,
+    required List<Message> msgs,
+    required String partial,
+    required String errorMessage,
+    required void Function(List<Message>) onMessagesChanged,
+    required void Function(String?) onError,
+  }) async {
+    onError(errorMessage);
+    final trimmed = partial.trim();
+    if (trimmed.isEmpty) {
+      onMessagesChanged(msgs.where((m) => m.id != activeDraftId).toList());
       return null;
     }
+    final finalMsg = Message(
+      id: activeDraftId,
+      conversationId: conversationId,
+      role: 'assistant',
+      content: trimmed,
+      createdAt: DateTime.now(),
+    );
+    try {
+      await db.into(db.messages).insert(finalMsg);
+      await (db.update(db.conversations)
+            ..where((c) => c.id.equals(conversationId)))
+          .write(ConversationsCompanion(updatedAt: Value(DateTime.now())));
+    } catch (_) {
+      // Best-effort persistence — the in-memory message is still
+      // shown to the user even if the DB write fails.
+    }
+    msgs[msgs.length - 1] = finalMsg;
+    onMessagesChanged(msgs);
+    return trimmed;
   }
 
   // --- No-embedding context strategy -------------------------------------
