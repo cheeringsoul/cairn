@@ -1,14 +1,32 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 
+import '../../secure_key_store.dart';
+import '../../settings_provider.dart';
 import '../tool_registry.dart';
+import 'search/brave_client.dart';
+import 'search/ddg_client.dart';
+import 'search/tavily_client.dart';
 
-/// Searches the web using the DuckDuckGo Instant Answer API (free,
-/// no API key required). Falls back to a simple HTML scrape of
-/// DuckDuckGo lite for broader queries.
+/// Dispatcher for the single LLM-visible `web_search` tool.
+///
+/// The LLM sees one tool with one name. What actually runs is picked
+/// here at execute time, based on the user's Settings toggles + stored
+/// API keys. Priority:
+///
+/// 1. Tavily — if its toggle is on AND a key is stored. Returns
+///    LLM-cleaned article bodies, best signal-to-noise for grounding.
+/// 2. Brave  — same conditions. Snippet-only results from an
+///    independent index.
+/// 3. DuckDuckGo — always-available keyless fallback. Narrow Instant
+///    Answer coverage + fragile HTML scrape; kept so the feature
+///    still works before the user configures anything.
 class WebSearchTool extends Tool {
+  final SettingsProvider? _settings;
+
+  WebSearchTool({SettingsProvider? settings}) : _settings = settings;
+
   @override
   String get name => 'web_search';
 
@@ -50,116 +68,55 @@ class WebSearchTool extends Tool {
       return jsonEncode({'error': 'Empty search query'});
     }
 
-    // Try DuckDuckGo Instant Answer API first — it gives structured
-    // results for many factual queries.
-    final iaResult = await _instantAnswer(query);
-    if (iaResult != null) return iaResult;
+    final settings = _settings;
+    final tavilyActive = settings != null &&
+        settings.hasTavilyKey &&
+        settings.isToolEnabled(SearchBackendNames.tavily,
+            defaultValue: false);
+    final braveActive = settings != null &&
+        settings.hasBraveKey &&
+        settings.isToolEnabled(SearchBackendNames.brave, defaultValue: false);
 
-    // Fall back to DuckDuckGo HTML lite for general queries.
-    return _htmlSearch(query);
-  }
-
-  Future<String?> _instantAnswer(String query) async {
-    final uri = Uri.parse('https://api.duckduckgo.com/')
-        .replace(queryParameters: {'q': query, 'format': 'json', 'no_html': '1'});
-    try {
-      final response = await http.get(uri).timeout(const Duration(seconds: 10));
-      if (response.statusCode != 200) return null;
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-
-      final abstractText = data['AbstractText'] as String? ?? '';
-      final answer = data['Answer'] as String? ?? '';
-      final relatedTopics = data['RelatedTopics'] as List? ?? [];
-
-      if (abstractText.isEmpty && answer.isEmpty && relatedTopics.isEmpty) {
-        return null;
-      }
-
-      final results = <Map<String, String>>[];
-      if (answer.isNotEmpty) {
-        results.add({'type': 'answer', 'text': answer});
-      }
-      if (abstractText.isNotEmpty) {
-        results.add({
-          'type': 'abstract',
-          'text': abstractText,
-          'source': data['AbstractSource'] as String? ?? '',
-          'url': data['AbstractURL'] as String? ?? '',
-        });
-      }
-      for (final topic in relatedTopics.take(5)) {
-        if (topic is Map && topic['Text'] != null) {
-          results.add({
-            'type': 'related',
-            'text': topic['Text'] as String? ?? '',
-            'url': topic['FirstURL'] as String? ?? '',
-          });
+    if (tavilyActive) {
+      final key = await SecureKeyStore.instance.readSearchKey('tavily');
+      if (key != null && key.isNotEmpty) {
+        try {
+          final result =
+              await TavilyClient.search(apiKey: key, query: query);
+          return jsonEncode(result);
+        } catch (e) {
+          // Fall through to the next backend rather than failing the
+          // whole turn — the user's real intent is "find something",
+          // not "use Tavily specifically".
+          final next = await _tryBrave(query, settings, braveActive);
+          return next ?? await _ddg(query);
         }
       }
+    }
 
-      if (results.isEmpty) return null;
-      return jsonEncode({'query': query, 'results': results});
+    if (braveActive) {
+      final result = await _tryBrave(query, settings, true);
+      if (result != null) return result;
+    }
+
+    return _ddg(query);
+  }
+
+  Future<String?> _tryBrave(
+      String query, SettingsProvider? settings, bool active) async {
+    if (!active) return null;
+    final key = await SecureKeyStore.instance.readSearchKey('brave');
+    if (key == null || key.isEmpty) return null;
+    try {
+      final result = await BraveClient.search(apiKey: key, query: query);
+      return jsonEncode(result);
     } catch (_) {
       return null;
     }
   }
 
-  Future<String> _htmlSearch(String query) async {
-    final uri = Uri.parse('https://html.duckduckgo.com/html/')
-        .replace(queryParameters: {'q': query});
-    try {
-      final response = await http.get(uri, headers: {
-        'User-Agent': 'Cairn/1.0',
-      }).timeout(const Duration(seconds: 10));
-
-      if (response.statusCode != 200) {
-        return jsonEncode({
-          'query': query,
-          'error': 'Search returned ${response.statusCode}',
-        });
-      }
-
-      // Parse result snippets from the HTML response.
-      final snippets = _parseHtmlResults(response.body);
-      return jsonEncode({'query': query, 'results': snippets});
-    } catch (e) {
-      return jsonEncode({'query': query, 'error': '$e'});
-    }
+  Future<String> _ddg(String query) async {
+    final result = await DdgClient.search(query);
+    return jsonEncode(result);
   }
-
-  /// Very lightweight HTML parser that extracts result titles and snippets
-  /// from DuckDuckGo HTML lite. No dependency on an HTML parser package.
-  List<Map<String, String>> _parseHtmlResults(String html) {
-    final results = <Map<String, String>>[];
-    // DuckDuckGo HTML wraps each result in <div class="result">.
-    // Titles are in <a class="result__a"> and snippets in
-    // <a class="result__snippet">.
-    final resultBlocks = RegExp(
-      r'class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>',
-      dotAll: true,
-    ).allMatches(html);
-
-    final snippetBlocks = RegExp(
-      r'class="result__snippet"[^>]*>(.*?)</a>',
-      dotAll: true,
-    ).allMatches(html);
-
-    final snippetList = snippetBlocks.map((m) => _stripHtml(m.group(1) ?? '')).toList();
-
-    var i = 0;
-    for (final m in resultBlocks) {
-      if (results.length >= 5) break;
-      final url = m.group(1) ?? '';
-      final title = _stripHtml(m.group(2) ?? '');
-      final snippet = i < snippetList.length ? snippetList[i] : '';
-      if (title.isNotEmpty) {
-        results.add({'title': title, 'url': url, 'snippet': snippet});
-      }
-      i++;
-    }
-    return results;
-  }
-
-  String _stripHtml(String html) =>
-      html.replaceAll(RegExp(r'<[^>]+>'), '').replaceAll(RegExp(r'\s+'), ' ').trim();
 }

@@ -37,6 +37,19 @@ class SettingsKeys {
   /// accidentally deleting a user's manually-added Qwen whose key
   /// happens to share the last 4 chars.
   static const legacySeedPurged = 'legacy_seed_purged';
+  // Last-4 chars of each search backend API key. Stored so the
+  // Settings UI can show "…abcd" without reading the Keychain on
+  // every rebuild. Empty string = no key configured.
+  static const tavilyKeyTail = 'tavily_key_tail';
+  static const braveKeyTail = 'brave_key_tail';
+}
+
+/// Names used by the search-backend pseudo-tools (registered for UI
+/// toggle purposes; not exposed to the LLM — see [WebSearchTool] which
+/// dispatches based on these toggles).
+class SearchBackendNames {
+  static const tavily = 'web_search_tavily';
+  static const brave = 'web_search_brave';
 }
 
 /// Default template used when the user first opens the app. The template
@@ -227,6 +240,16 @@ class SettingsProvider extends ChangeNotifier {
   /// are booleans. Tools not in this map use their `enabledByDefault`.
   Map<String, bool> enabledTools = {};
 
+  /// Last-4 chars of the configured Tavily API key, or empty string if
+  /// none. The raw key lives in [SecureKeyStore] / OS Keychain.
+  String tavilyKeyTail = '';
+
+  /// Same as [tavilyKeyTail] but for Brave.
+  String braveKeyTail = '';
+
+  bool get hasTavilyKey => tavilyKeyTail.isNotEmpty;
+  bool get hasBraveKey => braveKeyTail.isNotEmpty;
+
   // Cumulative token usage across every LLM call this app has made.
   int totalInputTokens = 0;
   int totalOutputTokens = 0;
@@ -282,6 +305,9 @@ class SettingsProvider extends ChangeNotifier {
         enabledTools = decoded.map((k, v) => MapEntry(k as String, v as bool));
       }
     }
+
+    tavilyKeyTail = map[SettingsKeys.tavilyKeyTail] ?? '';
+    braveKeyTail = map[SettingsKeys.braveKeyTail] ?? '';
 
     loaded = true;
     notifyListeners();
@@ -412,6 +438,61 @@ class SettingsProvider extends ChangeNotifier {
         if (isToolEnabled(t.name, defaultValue: t.enabledByDefault)) t.name,
     };
   }
+
+  // ----- Search backend keys (Tavily / Brave) -----
+
+  /// Persist a Tavily API key to the Keychain and store its last-4
+  /// for UI display. Also flips the Tavily backend toggle on so the
+  /// configure-then-enable flow lands in a working state.
+  Future<void> setTavilyKey(String key) async {
+    final trimmed = key.trim();
+    if (trimmed.isEmpty) return;
+    await SecureKeyStore.instance.writeSearchKey('tavily', trimmed);
+    tavilyKeyTail = _tailOf(trimmed);
+    await _writeSetting(SettingsKeys.tavilyKeyTail, tavilyKeyTail);
+    enabledTools[SearchBackendNames.tavily] = true;
+    await _writeSetting(
+        SettingsKeys.enabledTools, jsonEncode(enabledTools));
+    notifyListeners();
+  }
+
+  /// Remove the Tavily key from Keychain + kv. The toggle is flipped
+  /// off too — a disabled backend should never claim priority over the
+  /// DDG fallback just because a stale row exists.
+  Future<void> clearTavilyKey() async {
+    await SecureKeyStore.instance.deleteSearchKey('tavily');
+    tavilyKeyTail = '';
+    await _writeSetting(SettingsKeys.tavilyKeyTail, '');
+    enabledTools[SearchBackendNames.tavily] = false;
+    await _writeSetting(
+        SettingsKeys.enabledTools, jsonEncode(enabledTools));
+    notifyListeners();
+  }
+
+  Future<void> setBraveKey(String key) async {
+    final trimmed = key.trim();
+    if (trimmed.isEmpty) return;
+    await SecureKeyStore.instance.writeSearchKey('brave', trimmed);
+    braveKeyTail = _tailOf(trimmed);
+    await _writeSetting(SettingsKeys.braveKeyTail, braveKeyTail);
+    enabledTools[SearchBackendNames.brave] = true;
+    await _writeSetting(
+        SettingsKeys.enabledTools, jsonEncode(enabledTools));
+    notifyListeners();
+  }
+
+  Future<void> clearBraveKey() async {
+    await SecureKeyStore.instance.deleteSearchKey('brave');
+    braveKeyTail = '';
+    await _writeSetting(SettingsKeys.braveKeyTail, '');
+    enabledTools[SearchBackendNames.brave] = false;
+    await _writeSetting(
+        SettingsKeys.enabledTools, jsonEncode(enabledTools));
+    notifyListeners();
+  }
+
+  String _tailOf(String key) =>
+      key.length <= 4 ? key : key.substring(key.length - 4);
 
   // ----- Default model -----
 

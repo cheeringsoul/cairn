@@ -113,7 +113,10 @@ class CairnApp extends StatelessWidget {
             ctx.read<SettingsProvider>(),
             ctx.read<LibraryProvider>(),
             ctx.read<PersonaProvider>(),
-            createBuiltinRegistry(libraryDb: ctx.read<AppDatabase>()),
+            createBuiltinRegistry(
+              libraryDb: ctx.read<AppDatabase>(),
+              settings: ctx.read<SettingsProvider>(),
+            ),
           ),
         ),
         ChangeNotifierProvider<ReviewProvider>(

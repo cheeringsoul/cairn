@@ -24,4 +24,17 @@ class SecureKeyStore {
 
   Future<void> deleteApiKey(String providerId) =>
       _storage.delete(key: _keyFor(providerId));
+
+  // Search-backend keys (Tavily / Brave). Separate namespace from
+  // provider keys so the two can't collide on any id.
+  String _searchKeyFor(String backend) => 'search_api_key_$backend';
+
+  Future<void> writeSearchKey(String backend, String key) =>
+      _storage.write(key: _searchKeyFor(backend), value: key);
+
+  Future<String?> readSearchKey(String backend) =>
+      _storage.read(key: _searchKeyFor(backend));
+
+  Future<void> deleteSearchKey(String backend) =>
+      _storage.delete(key: _searchKeyFor(backend));
 }

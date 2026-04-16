@@ -28,6 +28,11 @@ abstract class Tool {
   /// Whether this tool is enabled by default for new users.
   bool get enabledByDefault;
 
+  /// Whether this tool is exposed to the LLM. Set to false for rows that
+  /// exist only as Settings-UI configuration affordances (e.g. search
+  /// backends whose actual invocation is dispatched by another tool).
+  bool get llmVisible => true;
+
   /// Execute the tool with the given JSON arguments string.
   /// Returns the result as a string (will be sent back to the LLM).
   Future<String> execute(String argumentsJson);
@@ -44,8 +49,10 @@ class ToolRegistry {
   List<Tool> get allTools => _tools.values.toList(growable: false);
 
   /// Return [ToolDefinition]s only for tool names in [enabledNames].
+  /// Tools with `llmVisible == false` are always skipped — they exist
+  /// purely as UI/config rows and must not reach the LLM.
   List<ToolDefinition> definitionsFor(Set<String> enabledNames) => _tools.values
-      .where((t) => enabledNames.contains(t.name))
+      .where((t) => t.llmVisible && enabledNames.contains(t.name))
       .map((t) => ToolDefinition(
             name: t.name,
             description: t.description,

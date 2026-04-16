@@ -279,12 +279,21 @@ class _ToolToggleTile extends StatelessWidget {
 
   const _ToolToggleTile({required this.tool, required this.settings});
 
+  bool get _isSearchBackend =>
+      tool.name == SearchBackendNames.tavily ||
+      tool.name == SearchBackendNames.brave;
+
   @override
   Widget build(BuildContext context) {
     final enabled = settings.isToolEnabled(
       tool.name,
       defaultValue: tool.enabledByDefault,
     );
+
+    if (_isSearchBackend) {
+      return _SearchBackendTile(tool: tool, settings: settings);
+    }
+
     return SwitchListTile(
       secondary: Icon(tool.icon, size: 22),
       title: Text(tool.displayName),
@@ -296,6 +305,189 @@ class _ToolToggleTile extends StatelessWidget {
       ),
       value: enabled,
       onChanged: (value) => settings.setToolEnabled(tool.name, value),
+    );
+  }
+}
+
+/// Specialised row for the Tavily / Brave search-backend pseudo-tools.
+///
+/// Differences from a plain [SwitchListTile]:
+/// - Turning the switch ON with no key yet → pop up a key-entry
+///   dialog; cancel reverts the switch.
+/// - Already-configured state shows the last-4 of the stored key as
+///   subtitle and a trailing "edit" button to re-enter / remove.
+class _SearchBackendTile extends StatelessWidget {
+  final Tool tool;
+  final SettingsProvider settings;
+
+  const _SearchBackendTile({required this.tool, required this.settings});
+
+  bool get _isTavily => tool.name == SearchBackendNames.tavily;
+
+  String get _keyTail =>
+      _isTavily ? settings.tavilyKeyTail : settings.braveKeyTail;
+
+  bool get _hasKey => _keyTail.isNotEmpty;
+
+  Future<void> _saveKey(String key) async {
+    if (_isTavily) {
+      await settings.setTavilyKey(key);
+    } else {
+      await settings.setBraveKey(key);
+    }
+  }
+
+  Future<void> _clearKey() async {
+    if (_isTavily) {
+      await settings.clearTavilyKey();
+    } else {
+      await settings.clearBraveKey();
+    }
+  }
+
+  Future<void> _promptForKey(BuildContext context) async {
+    final entered = await showDialog<String>(
+      context: context,
+      builder: (_) => _ApiKeyDialog(
+        title: '${tool.displayName} API key',
+        initial: '',
+      ),
+    );
+    if (entered != null && entered.trim().isNotEmpty) {
+      await _saveKey(entered);
+    }
+  }
+
+  Future<void> _showManageSheet(BuildContext context) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('Change API key'),
+              onTap: () => Navigator.pop(context, 'change'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('Remove API key'),
+              onTap: () => Navigator.pop(context, 'remove'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!context.mounted) return;
+    if (choice == 'change') {
+      await _promptForKey(context);
+    } else if (choice == 'remove') {
+      await _clearKey();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = settings.isToolEnabled(
+      tool.name,
+      defaultValue: tool.enabledByDefault,
+    );
+
+    final subtitleText = _hasKey
+        ? 'Active · key ••••$_keyTail · ${tool.description}'
+        : 'Not configured · ${tool.description}';
+
+    return SwitchListTile(
+      secondary: Icon(tool.icon, size: 22),
+      title: Row(
+        children: [
+          Expanded(child: Text(tool.displayName)),
+          if (_hasKey)
+            IconButton(
+              icon: const Icon(Icons.tune, size: 18),
+              tooltip: 'Manage API key',
+              onPressed: () => _showManageSheet(context),
+            ),
+        ],
+      ),
+      subtitle: Text(
+        subtitleText,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 12),
+      ),
+      value: enabled,
+      onChanged: (value) async {
+        if (value) {
+          if (_hasKey) {
+            await settings.setToolEnabled(tool.name, true);
+          } else {
+            // No key yet — prompt, and only flip the toggle if the
+            // user actually saves one. setTavilyKey/setBraveKey take
+            // care of toggling the tool on as part of saving.
+            await _promptForKey(context);
+          }
+        } else {
+          await settings.setToolEnabled(tool.name, false);
+        }
+      },
+    );
+  }
+}
+
+class _ApiKeyDialog extends StatefulWidget {
+  final String title;
+  final String initial;
+
+  const _ApiKeyDialog({required this.title, required this.initial});
+
+  @override
+  State<_ApiKeyDialog> createState() => _ApiKeyDialogState();
+}
+
+class _ApiKeyDialogState extends State<_ApiKeyDialog> {
+  late final TextEditingController _controller;
+  bool _obscure = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initial);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        obscureText: _obscure,
+        decoration: InputDecoration(
+          hintText: 'Paste your API key',
+          suffixIcon: IconButton(
+            icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
+            onPressed: () => setState(() => _obscure = !_obscure),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }
