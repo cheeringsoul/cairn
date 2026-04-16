@@ -138,6 +138,24 @@ flutter run                                                # 选一台设备
   关键词召回
 - **复习调度** — `saved_items` 表上的 FSRS 字段 + `review_provider.dart`
 
+### 设计文档
+
+`docs/` 目录收录了 Cairn 的内部设计说明，方便贡献者深入：
+
+| 文档 | 内容 |
+|------|------|
+| [`docs/architecture.md`](./docs/architecture.md) | 整体架构：技术栈、目录布局、依赖图、启动流程、数据模型、Provider 适配层 |
+| [`docs/features.md`](./docs/features.md) | 产品特色：跨会话召回、双知识池、cairn-meta、工具系统、间隔重复 |
+| [`docs/embeddings.md`](./docs/embeddings.md) | 向量子系统：模型选择、扇出队列、健康监控、向量存储、召回算法 |
+| [`docs/context_loading.md`](./docs/context_loading.md) | 单次发送时的上下文组装：system prompt、历史窗口、工具、流式落库 |
+
+阅读建议：
+
+- 想知道**数据流到了哪里** → `context_loading.md`
+- 想**贡献代码** → `architecture.md`，再按要改的模块跳到对应专题
+- 想理解 **AI 行为** → `features.md` §1-3
+- 想做**向量层优化** → `embeddings.md`
+
 ### 代码卫生
 
 每次提交 `flutter analyze` 必须 clean。完整规则见 `CLAUDE.md`。
@@ -301,6 +319,24 @@ three-pane chat shell (1160×760), via a method channel in
 - **Embeddings** — pipeline under `lib/services/embedding_*` with health
   monitoring; falls back to keyword recall when providers misbehave.
 - **Review** — FSRS fields on `saved_items`; scheduler in `review_provider.dart`.
+
+### Design docs
+
+The `docs/` folder collects Cairn's internal design notes for contributors:
+
+| Doc | Covers |
+|-----|--------|
+| [`docs/architecture.md`](./docs/architecture.md) | Overall structure: stack, layout, dependency graph, boot flow, data model, provider adapters |
+| [`docs/features.md`](./docs/features.md) | Product features: cross-conversation recall, dual knowledge pools, cairn-meta, tools, spaced repetition |
+| [`docs/embeddings.md`](./docs/embeddings.md) | Vector subsystem: model selection, fanout queue, health monitoring, storage, recall algorithm |
+| [`docs/context_loading.md`](./docs/context_loading.md) | Per-turn context assembly: system prompt, history window, tools, streaming commit |
+
+Suggested reading paths:
+
+- Want to know **where your data goes** → `context_loading.md`
+- Want to **contribute code** → start with `architecture.md`, then jump to the topic doc for the module you touch
+- Want to understand **AI behavior** → `features.md` §1-3
+- Want to **optimize the vector layer** → `embeddings.md`
 
 ### Code hygiene
 

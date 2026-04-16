@@ -1,114 +1,123 @@
-# 对话上下文加载逻辑
+# Conversation Context Loading
 
-> 本文整理 Cairn 在每一轮发送消息时，如何组装喂给 LLM 的上下文。
-> 覆盖：System Prompt 构成、历史消息策略、工具定义、流式回写。
+> How Cairn assembles the context it feeds the LLM on every turn.
+> Covers: system prompt composition, history strategy, tool definitions, streaming commit.
 
 ---
 
-## 1. 总览
+## 1. Overview
 
-一次 `sendMessage` 的上下文由四部分拼装后送入 Provider：
+Each `sendMessage` call composes the request from three parts before handing it to the provider:
 
 ```
-┌──────────────── system prompt ────────────────┐   ┌── messages ──┐   ┌── tools ──┐
-│ aboutMe + persona + recall + cairn-meta 指令  │ + │ 历史消息列表 │ + │ 启用工具  │
-└───────────────────────────────────────────────┘   └──────────────┘   └───────────┘
+┌──────────────── system prompt ────────────────┐   ┌─── messages ───┐   ┌── tools ──┐
+│ aboutMe + persona + recall + cairn-meta instr │ + │  history list  │ + │  enabled  │
+└───────────────────────────────────────────────┘   └────────────────┘   └───────────┘
 ```
 
-入口在 `ChatProvider.sendMessage`，组装完后交给 `StreamingChatMixin.streamAndCommit`
-执行多轮（含工具）流式调用，最终把回复写回 SQLite。
+The entry point is `ChatProvider.sendMessage`. Once assembled it is passed to
+`StreamingChatMixin.streamAndCommit`, which runs the multi-round streaming call
+(including any tool turns) and writes the reply back to SQLite.
 
-关键文件：
+Key files:
 
-- `lib/services/chat_provider.dart` — 入口、System Prompt 拼装、自动归档
-- `lib/services/streaming_chat_mixin.dart` — 历史窗口、流处理、工具循环、错误兜底
-- `lib/services/llm/anthropic_provider.dart` / `openai_provider.dart` — Provider 适配
-- `lib/services/library_provider.dart` — 跨会话向量召回
-- `lib/services/cairn_meta.dart` — 让模型输出可归档元信息的指令块
-- `lib/services/constants.dart` — 无 embedding 时的窗口阈值
-
----
-
-## 2. 数据模型
-
-Drift / SQLite，三张相关表（`lib/services/db/database.dart`）：
-
-| 表             | 关键字段                                                          | 说明                                |
-|----------------|-------------------------------------------------------------------|-------------------------------------|
-| `Conversations`| `personaId`, `providerId`, `model`, `systemPrompt?`, `kind`       | 会话级配置，创建时锁定 model        |
-| `Messages`     | `conversationId`, `role`, `content`, `createdAt`                  | 纯文本，无附件结构                  |
-| `Personas`     | `name`, `instruction`, `icon`, `sortOrder`                        | 可复用的 system prompt 模板         |
-
-注意：`Messages.content` 只存最终文本；工具调用过程消息只存活在内存里，不落库。
+- `lib/services/chat_provider.dart` — entry, system prompt composition, auto-archive
+- `lib/services/streaming_chat_mixin.dart` — history window, stream handling, tool loop, error fallback
+- `lib/services/llm/anthropic_provider.dart` / `openai_provider.dart` — provider adapters
+- `lib/services/library_provider.dart` — cross-conversation vector recall
+- `lib/services/cairn_meta.dart` — instruction block that makes the model emit archivable metadata
+- `lib/services/constants.dart` — window thresholds for the no-embedding fallback
 
 ---
 
-## 3. System Prompt 拼装
+## 2. Data Model
 
-`ChatProvider._buildSystemPrompt` (`chat_provider.dart:503-527`) 按顺序拼接：
+Drift / SQLite. Three relevant tables (`lib/services/db/database.dart`):
 
-1. **About Me** — 用户在设置里写的自我描述，引导模型口吻 / 偏好。
-2. **Persona instruction** — 当前选中 persona 的指令；未选则取默认 persona。
-3. **Recall context** — 通过 embedding 跨会话召回的相关历史知识，
-   由 `LibraryProvider.formatRecallContext` (`library_provider.dart:853-870`)
-   渲染为 markdown 列表。最多 5 条。
-4. **`cairnMetaSystemInstruction`** (`cairn_meta.dart:140-156`) — 要求模型在回复尾部
-   附带可解析的元数据块（实体、类型、标签、`reviewable` 等），用于自动归档。
+| Table           | Key fields                                                         | Notes                                         |
+|-----------------|--------------------------------------------------------------------|-----------------------------------------------|
+| `Conversations` | `personaId`, `providerId`, `model`, `systemPrompt?`, `kind`        | Conversation-level config; model is locked in at creation |
+| `Messages`      | `conversationId`, `role`, `content`, `createdAt`                   | Plain text only; no attachment structure      |
+| `Personas`      | `name`, `instruction`, `icon`, `sortOrder`                         | Reusable system-prompt templates              |
 
-调用点：`chat_provider.dart:325-327`，传入参数仅有 `recallContext`。
+Note: `Messages.content` stores only the final text. Intermediate tool-call
+messages live in memory for the duration of the turn and never hit the DB.
 
 ---
 
-## 4. 召回（recall）
+## 3. System Prompt Composition
 
-`chat_provider.dart:322-324` 在写入用户消息的同时并行触发：
+`ChatProvider._buildSystemPrompt` (`chat_provider.dart:503-527`) concatenates, in order:
+
+1. **About Me** — free-form self-description the user writes in settings; shapes tone / preferences.
+2. **Persona instruction** — the active persona's instruction; falls back to the default persona when none is selected.
+3. **Recall context** — cross-conversation knowledge retrieved via embeddings,
+   rendered as a markdown bullet list by
+   `LibraryProvider.formatRecallContext` (`library_provider.dart:853-870`). Top 5.
+4. **`cairnMetaSystemInstruction`** (`cairn_meta.dart:140-156`) — asks the model to
+   append a parseable metadata block (entity, type, tags, `reviewable`, …) at the
+   end of the reply so the app can auto-archive.
+
+Call site: `chat_provider.dart:325-327`. Only `recallContext` is passed in — the
+other parts are read from injected providers directly.
+
+---
+
+## 4. Recall
+
+`chat_provider.dart:322-324` runs recall in parallel with the user-message DB insert:
 
 ```dart
-final recallFuture = _library.recallRelated(trimmed); // 网络 ~100-300ms
-await _db.into(_db.messages).insert(userMsg);          // 本地 ~1ms
+final recallFuture = _library.recallRelated(trimmed); // network ~100-300ms
+await _db.into(_db.messages).insert(userMsg);          // local ~1ms
 final recalled = await recallFuture;
 ```
 
-并发省下 100~300ms。如果用户**任何 provider** 都不支持 embedding，召回静默禁用，
-转而走第 5 节的"无 embedding 兜底"。
+The parallelism hides the 100–300 ms embedding round-trip behind the DB write.
+If **none** of the user's configured providers supports embeddings, recall
+silently returns empty and the turn continues under the "no-embedding fallback"
+described in §5.
 
 ---
 
-## 5. 历史消息策略
+## 5. History Strategy
 
-`StreamingChatMixin.streamAndCommit` 中 `lib/services/streaming_chat_mixin.dart:166-171`
-是分支点：
+The branch point is in `StreamingChatMixin.streamAndCommit`
+(`lib/services/streaming_chat_mixin.dart:166-171`):
 
 ```dart
-final persisted = msgs.take(msgs.length - 1).toList(); // 去掉占位 draft
+final persisted = msgs.take(msgs.length - 1).toList(); // drop the placeholder draft
 var history = hasEmbeddingFallback
     ? persisted.map((m) => LlmMessage(role: m.role, content: m.content)).toList()
     : await _buildUserOnlyHistory(persisted, adapter, model);
 ```
 
-### 5a. 有 embedding（默认路径）
+### 5a. With embedding (default path)
 
-整段对话原样发出（user + assistant 全保留）。窗口压力由 provider 上下文窗口承载，
-跨会话补充由召回保证。
+The whole transcript is sent verbatim (user + assistant turns preserved). Window
+pressure is borne by the provider's context window; cross-conversation
+reinforcement comes from recall.
 
-### 5b. 无 embedding 兜底
+### 5b. No-embedding fallback
 
-`_buildUserOnlyHistory` (`streaming_chat_mixin.dart:403-432`) 采用更保守策略：
+`_buildUserOnlyHistory` (`streaming_chat_mixin.dart:403-432`) takes a more conservative tack:
 
-1. **只保留 user 消息**（assistant 回答被丢弃，意图链由用户提问承载）。
-2. 阈值见 `NoEmbedContext` (`constants.dart:97-102`)：
-   - `compressChars = 40000` — 用户提问总长超此值才触发压缩
-   - `keepRecentTurns = 10` — 保留最近 10 条 user 提问原文
-   - `warnChars = 32000` — 超过即在 UI 提示开新会话
-     (`chat_provider.dart:119-127`)
-3. 老的提问交给 `_summarizeOlder` (`streaming_chat_mixin.dart:434-468`) 做 ≤200 字
-   的二次 LLM 摘要；摘要失败则朴素截断到 2000 字符。
+1. **Keep only user messages** — assistant turns are dropped; the intent trail
+   lives entirely in the user's own questions.
+2. Thresholds in `NoEmbedContext` (`constants.dart:97-102`):
+   - `compressChars = 40000` — total user-question length above which compression kicks in
+   - `keepRecentTurns = 10` — most recent N user messages kept verbatim
+   - `warnChars = 32000` — beyond this the UI nudges the user to start a new
+     conversation (`chat_provider.dart:119-127`)
+3. Older questions go through `_summarizeOlder` (`streaming_chat_mixin.dart:434-468`)
+   for a secondary ≤200-word LLM summary. If that call fails, a naive 2000-char
+   truncation is used as a last resort.
 
 ---
 
-## 6. 工具定义
+## 6. Tool Definitions
 
-`streaming_chat_mixin.dart:152-154`：
+`streaming_chat_mixin.dart:152-154`:
 
 ```dart
 final toolDefs = toolRegistry != null && enabledToolNames != null
@@ -116,72 +125,78 @@ final toolDefs = toolRegistry != null && enabledToolNames != null
     : <ToolDefinition>[];
 ```
 
-启用工具集由 `SettingsProvider.enabledToolNames` 解析（用户开关 + 默认开关）。
-工具循环上限 `maxToolRounds = 5`（`streaming_chat_mixin.dart:176`），
-超出后强制收尾，避免死循环。
+The enabled set is resolved by `SettingsProvider.enabledToolNames` (user
+toggles + per-tool defaults). The tool loop caps at `maxToolRounds = 5`
+(`streaming_chat_mixin.dart:176`) to prevent infinite loops.
 
-每轮工具结果：
-- 以 `role: 'tool'` 追加到内存 `history`，**不落库**。
-- 若工具结果 JSON 含 `action_links`，作为 markdown 按钮拼到最终回复尾部
-  (`streaming_chat_mixin.dart:252-277, 307-319`)。
-
----
-
-## 7. Provider 适配 — 真正出网点
-
-| Provider   | 文件                                              | 关键差异                                       |
-|------------|---------------------------------------------------|------------------------------------------------|
-| Anthropic  | `lib/services/llm/anthropic_provider.dart:22-49` | system 顶层字段，`max_tokens=4096` 硬编码       |
-| OpenAI     | `lib/services/llm/openai_provider.dart:17-54`    | system 作为 `role: system` 消息，工具走 function-call |
-
-两侧都用 SSE 流式回写，事件被归一化为 `TextDelta` / `ToolCallDelta` 两种
-`StreamEvent`，再由 mixin 统一处理。
+Per-round tool outcomes:
+- Appended to in-memory `history` as `role: 'tool'`. **Not persisted**.
+- If a tool result's JSON contains an `action_links` field, the links are
+  rendered as markdown buttons appended after the final reply text
+  (`streaming_chat_mixin.dart:252-277, 307-319`).
 
 ---
 
-## 8. 流处理与持久化
+## 7. Provider Adapters — the Egress Points
 
-`streaming_chat_mixin.dart:188-227` 的监听循环：
+| Provider  | File                                             | Notable differences                                          |
+|-----------|--------------------------------------------------|--------------------------------------------------------------|
+| Anthropic | `lib/services/llm/anthropic_provider.dart:22-49` | System is a top-level field; `max_tokens=4096` hardcoded     |
+| OpenAI    | `lib/services/llm/openai_provider.dart:17-54`    | System is a `role: 'system'` message; tools use function-call format |
 
-- `TextDelta` → 追加到 `StringBuffer`，更新内存中 draft 消息，触发 UI 刷新。
-- `ToolCallDelta` → 入 `pendingToolCalls`，待本轮 `onDone` 后批量执行。
-
-落库逻辑 `streaming_chat_mixin.dart:290-335`：
-
-- 文本为空（如所有工具回合都失败）→ 丢弃 draft，不污染下一轮历史。
-- 文本非空 → 插入 `Messages` 表，同时更新会话 `updatedAt`。
-- 出错 (`LlmException` 或其他) → 走 `_commitPartialOnError`
-  (`streaming_chat_mixin.dart:364-399`)，把已经流出来的部分文本保存下来。
-
-回复落库后，`chat_provider.dart:380-389` 解析 cairn-meta，若 `reviewable: true`
-则异步写入知识池（`in_library=false`），供后续 embedding 召回用。
+Both adapters stream via SSE and normalize events into `TextDelta` /
+`ToolCallDelta` (`StreamEvent` subtypes). The mixin above them is provider-agnostic.
 
 ---
 
-## 9. 取消与并发
+## 8. Streaming & Persistence
 
-每次 `sendMessage` 持有一个 `_activeCancelToken`。用户中断后：
+The listener loop in `streaming_chat_mixin.dart:188-227`:
 
-- UI 立刻翻转 `sending=false`，回调里通过 `token.isCancelled` 守卫，避免覆盖
-  下一轮已经开始的状态 (`chat_provider.dart:352-373`)。
-- 后台仍会把已流出的文本提交到 DB（partial commit），不丢用户已经看到的内容。
+- `TextDelta` → append to `StringBuffer`, update the in-memory draft message, trigger UI refresh.
+- `ToolCallDelta` → collect into `pendingToolCalls`; executed in batch after `onDone` for the round.
+
+Persistence path (`streaming_chat_mixin.dart:290-335`):
+
+- Empty final text (e.g. every tool round failed) → drop the draft; don't
+  pollute the next turn's history.
+- Non-empty → insert into `Messages`; update the conversation's `updatedAt`.
+- On error (`LlmException` or otherwise) → `_commitPartialOnError`
+  (`streaming_chat_mixin.dart:364-399`) saves whatever was already streamed so
+  the user keeps the partial text they saw.
+
+After commit, `chat_provider.dart:380-389` parses cairn-meta. When `reviewable:
+true` the reply is asynchronously written to the knowledge pool
+(`in_library=false`) for future embedding recall.
 
 ---
 
-## 10. 速查清单
+## 9. Cancellation & Concurrency
 
-| 关注点                 | 文件 : 行                                                |
-|------------------------|----------------------------------------------------------|
-| 入口                   | `chat_provider.dart:300-373`                             |
-| System Prompt 拼装     | `chat_provider.dart:503-527`                             |
-| 召回并发               | `chat_provider.dart:322-324`                             |
-| 召回格式化             | `library_provider.dart:853-870`                          |
-| cairn-meta 指令        | `cairn_meta.dart:140-156`                                |
-| 历史窗口分支           | `streaming_chat_mixin.dart:166-171`                      |
-| 无 embedding 压缩      | `streaming_chat_mixin.dart:403-468`                      |
-| 阈值常量               | `constants.dart:97-102`                                  |
-| 工具循环               | `streaming_chat_mixin.dart:176-288`                      |
-| 出网（Anthropic）      | `llm/anthropic_provider.dart:22-49`                      |
-| 出网（OpenAI）         | `llm/openai_provider.dart:17-54`                         |
-| 错误兜底落库           | `streaming_chat_mixin.dart:364-399`                      |
-| 自动归档               | `chat_provider.dart:380-389`                             |
+Each `sendMessage` owns an `_activeCancelToken`. When the user aborts:
+
+- The UI immediately flips `sending=false`. All callbacks guard with
+  `token.isCancelled` so the in-flight partial commit doesn't clobber state
+  that a subsequent turn may already own (`chat_provider.dart:352-373`).
+- The background task still commits whatever text has streamed so far
+  (partial commit). The user never loses content they already saw.
+
+---
+
+## 10. Quick Reference
+
+| Concern                        | File : lines                                             |
+|--------------------------------|----------------------------------------------------------|
+| Entry                          | `chat_provider.dart:300-373`                             |
+| System prompt composition      | `chat_provider.dart:503-527`                             |
+| Recall concurrency             | `chat_provider.dart:322-324`                             |
+| Recall formatting              | `library_provider.dart:853-870`                          |
+| cairn-meta instruction         | `cairn_meta.dart:140-156`                                |
+| History-window branch          | `streaming_chat_mixin.dart:166-171`                      |
+| No-embedding compression       | `streaming_chat_mixin.dart:403-468`                      |
+| Threshold constants            | `constants.dart:97-102`                                  |
+| Tool loop                      | `streaming_chat_mixin.dart:176-288`                      |
+| Egress (Anthropic)             | `llm/anthropic_provider.dart:22-49`                      |
+| Egress (OpenAI)                | `llm/openai_provider.dart:17-54`                         |
+| Partial-commit on error        | `streaming_chat_mixin.dart:364-399`                      |
+| Auto-archive                   | `chat_provider.dart:380-389`                             |
