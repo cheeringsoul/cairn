@@ -63,6 +63,5 @@ app.*.map.json
 **/ios/ServiceDefinitions.json
 **/.flutter-plugins
 local
-docs/
 .idea/
 .claude/
