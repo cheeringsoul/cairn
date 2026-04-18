@@ -71,6 +71,16 @@ class ChatProvider extends ChangeNotifier {
     sending = false;
     activeToolStatus = null;
     _activeCancelToken = null;
+    // Drop the draft reply if it hadn't produced any text yet. The
+    // message bubble shows "思考中" on empty-content assistant
+    // messages, and the stream-side cleanup in streamAndCommit is
+    // silenced by the cancel guard in onMessagesChanged, so without
+    // this the indicator would linger.
+    if (messages.isNotEmpty &&
+        messages.last.role == MessageRole.assistant &&
+        messages.last.content.isEmpty) {
+      messages = messages.sublist(0, messages.length - 1);
+    }
     notifyListeners();
   }
 

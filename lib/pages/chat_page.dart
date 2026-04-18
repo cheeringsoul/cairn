@@ -50,6 +50,8 @@ class _ChatPageState extends State<ChatPage> {
   final Map<String, GlobalKey> _messageKeys = {};
   bool _initialized = false;
   bool _showScrollToBottom = false;
+  String? _lastConvId;
+  bool _hasSeenConvState = false;
 
   @override
   void initState() {
@@ -174,7 +176,7 @@ class _ChatPageState extends State<ChatPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(l10n.savedToLibrary),
-        duration: const Duration(seconds: 3),
+        duration: const Duration(milliseconds: 1500),
         action: SnackBarAction(
           label: l10n.view,
           onPressed: () {
@@ -271,11 +273,33 @@ class _ChatPageState extends State<ChatPage> {
     super.dispose();
   }
 
+  /// Pop the soft keyboard on first entry to a fresh chat screen, and
+  /// whenever the user returns to the empty composer state (tap "new
+  /// conversation", drawer's new-chat action, context-pressure tag).
+  /// Skipped once a conversation has any messages so the keyboard
+  /// doesn't re-open during streaming or after a history rebuild.
+  void _maybeFocusComposerForNewConversation(ChatProvider provider) {
+    if (provider.loading) return;
+    final isFreshComposer =
+        provider.currentConversationId == null && provider.messages.isEmpty;
+    final firstTime = !_hasSeenConvState;
+    final justReset = _hasSeenConvState && _lastConvId != null;
+    if (isFreshComposer && (firstTime || justReset)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _composerFocus.requestFocus();
+      });
+    }
+    _lastConvId = provider.currentConversationId;
+    _hasSeenConvState = true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ChatProvider>();
     final cs = Theme.of(context).colorScheme;
     if (provider.sending) _scrollToBottom();
+    _maybeFocusComposerForNewConversation(provider);
 
     // Handle scroll-to-message requests (e.g. from Source link in detail page).
     if (provider.scrollToMessageId != null && !provider.loading) {

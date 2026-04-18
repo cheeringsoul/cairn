@@ -110,6 +110,7 @@ class _ExplainSessionPageState extends State<ExplainSessionPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(l10n.savedToLibrary),
+        duration: const Duration(milliseconds: 1500),
         action: SnackBarAction(
           label: l10n.view,
           onPressed: () {
