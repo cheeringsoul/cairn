@@ -280,9 +280,7 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
                                     builder: (_) => const ProfilePage()),
                               );
                             },
-                            child: _MiniAvatar(
-                              badge: review.dueCount,
-                            ),
+                            child: const _MiniAvatar(),
                           ),
                         ],
                       ),
@@ -570,17 +568,13 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
 
 }
 
-/// Small avatar circle used in the drawer header, with optional badge.
+/// Small avatar circle used in the drawer header.
 class _MiniAvatar extends StatelessWidget {
-  final int badge;
-  const _MiniAvatar({required this.badge});
+  const _MiniAvatar();
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    final badgeColor =
-        theme.extension<NavAccents>()?.review ?? Colors.orange;
+    final cs = Theme.of(context).colorScheme;
     final settings = context.watch<SettingsProvider>();
 
     return FutureBuilder<String>(
@@ -590,41 +584,14 @@ class _MiniAvatar extends StatelessWidget {
         final file = resolvedPath.isNotEmpty ? File(resolvedPath) : null;
         final hasImage = file != null && file.existsSync();
 
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: cs.primaryContainer,
-              backgroundImage: hasImage ? FileImage(file) : null,
-              child: hasImage
-                  ? null
-                  : Icon(Icons.person_rounded,
-                      size: 18, color: cs.onPrimaryContainer),
-            ),
-            if (badge > 0)
-              Positioned(
-                top: -4,
-                right: -4,
-                child: Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    color: badgeColor,
-                    shape: BoxShape.circle,
-                  ),
-                  constraints:
-                      const BoxConstraints(minWidth: 16, minHeight: 16),
-                  child: Text(
-                    '$badge',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white),
-                  ),
-                ),
-              ),
-          ],
+        return CircleAvatar(
+          radius: 16,
+          backgroundColor: cs.primaryContainer,
+          backgroundImage: hasImage ? FileImage(file) : null,
+          child: hasImage
+              ? null
+              : Icon(Icons.person_rounded,
+                  size: 18, color: cs.onPrimaryContainer),
         );
       },
     );
