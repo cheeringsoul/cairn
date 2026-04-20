@@ -53,7 +53,10 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "logo1_fullbleed_green.png"
+  macos:
+    generate: true
+    image_path: "logo.png"
+  image_path: "logo.png"
   min_sdk_android: 21
   remove_alpha_ios: true
 
