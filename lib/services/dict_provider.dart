@@ -77,7 +77,7 @@ class DictProvider extends ChangeNotifier {
       await _ensureNativeLib();
       final path = await getDbPath();
       if (File(path).existsSync()) {
-        _open(path);
+        _openOrRebuild(path);
         notifyListeners();
       }
     } catch (e) {
@@ -95,9 +95,12 @@ class DictProvider extends ChangeNotifier {
 
       final path = await getDbPath();
       if (File(path).existsSync()) {
-        _open(path);
-        notifyListeners();
-        return true;
+        if (await _openOrRebuild(path)) {
+          notifyListeners();
+          return true;
+        }
+        // Existing file was corrupt and got deleted; fall through to
+        // extract a fresh copy from the asset bundle.
       }
 
       return await _extractFromAssets(path);
@@ -122,20 +125,47 @@ class DictProvider extends ChangeNotifier {
     _db = sqlite3.open(path, mode: OpenMode.readOnly);
   }
 
-  /// Copy the bundled asset to the documents directory.
+  /// Open an existing on-disk copy, or delete and signal rebuild if the
+  /// file is corrupt (e.g. a prior extract was interrupted, leaving a
+  /// truncated file — opening it can SIGABRT natively on some platforms).
+  /// Returns true if the open succeeded.
+  Future<bool> _openOrRebuild(String path) async {
+    try {
+      _open(path);
+      // Cheap sanity query — touches the schema without scanning rows.
+      _db!.select('SELECT 1 FROM stardict LIMIT 1');
+      return true;
+    } catch (e) {
+      debugPrint('DictProvider: existing $_kDbFileName unusable ($e); '
+          're-extracting from assets');
+      _db?.dispose();
+      _db = null;
+      try {
+        await File(path).delete();
+      } catch (_) {}
+      return false;
+    }
+  }
+
+  /// Copy the bundled asset to the documents directory. Writes to a
+  /// `.tmp` sibling and renames on success so we never leave a
+  /// half-written file at the real path.
   Future<bool> _extractFromAssets(String destPath) async {
     if (_extracting) return false;
     _extracting = true;
     _error = null;
     notifyListeners();
 
+    final tmpPath = '$destPath.tmp';
     try {
       final data = await rootBundle.load(_kAssetPath);
       final bytes = data.buffer.asUint8List(
         data.offsetInBytes,
         data.lengthInBytes,
       );
-      await File(destPath).writeAsBytes(bytes, flush: true);
+      final tmpFile = File(tmpPath);
+      await tmpFile.writeAsBytes(bytes, flush: true);
+      await tmpFile.rename(destPath);
 
       _open(destPath);
       _extracting = false;
@@ -144,6 +174,11 @@ class DictProvider extends ChangeNotifier {
     } catch (e) {
       _error = e.toString();
       _extracting = false;
+      // Clean up a stray tmp file if rename never happened.
+      try {
+        final tmp = File(tmpPath);
+        if (await tmp.exists()) await tmp.delete();
+      } catch (_) {}
       notifyListeners();
       return false;
     }

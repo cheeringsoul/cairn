@@ -1623,38 +1623,49 @@ class _ModelPopoverState extends State<_ModelPopover> {
               shadowColor: Colors.black.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(12),
               color: cs.surfaceContainerLow,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(height: 6),
-                  Flexible(
-                    child: ListView(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      shrinkWrap: true,
-                      children: [
-                        for (final p in widget.providers) ...[
-                          _ProviderHeader(
-                            name: p.displayName,
-                            isActive: p.id == widget.currentProviderId,
-                            expanded: _expanded.contains(p.id),
-                            cs: cs,
-                            onTap: () => _toggleSection(p.id),
-                          ),
-                          if (_expanded.contains(p.id))
-                            ..._buildModels(p, cs),
+              child: ValueListenableBuilder<int>(
+                valueListenable: ModelService.cacheVersion,
+                builder: (ctx, _, __) => Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          RefreshModelsButton(colorScheme: cs),
                         ],
-                      ],
+                      ),
                     ),
-                  ),
-                  Divider(
-                      height: 1,
-                      color: cs.onSurface.withValues(alpha: 0.08)),
-                  _AddProviderRow(
-                    cs: cs,
-                    label: widget.l10n.addProvider,
-                    onTap: widget.onAddProvider,
-                  ),
-                ],
+                    Flexible(
+                      child: ListView(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        shrinkWrap: true,
+                        children: [
+                          for (final p in widget.providers) ...[
+                            _ProviderHeader(
+                              name: p.displayName,
+                              isActive: p.id == widget.currentProviderId,
+                              expanded: _expanded.contains(p.id),
+                              cs: cs,
+                              onTap: () => _toggleSection(p.id),
+                            ),
+                            if (_expanded.contains(p.id))
+                              ..._buildModels(p, cs),
+                          ],
+                        ],
+                      ),
+                    ),
+                    Divider(
+                        height: 1,
+                        color: cs.onSurface.withValues(alpha: 0.08)),
+                    _AddProviderRow(
+                      cs: cs,
+                      label: widget.l10n.addProvider,
+                      onTap: widget.onAddProvider,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

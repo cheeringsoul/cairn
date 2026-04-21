@@ -2,34 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-	</dict>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Choose a profile photo from your library</string>
-	<key>NSCalendarsUsageDescription</key>
-	<string>Used to add events you ask the AI to schedule (meetings, reminders) to your calendar.</string>
-	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
-	<string>Used to add events you ask the AI to schedule to your calendar.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Used to answer location-aware questions (e.g. local weather, nearby places) when you ask the AI.</string>
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
-		<string>iosamap</string>
-		<string>baidumap</string>
-		<string>imeituan</string>
-		<string>dianping</string>
-		<string>diditaxi</string>
-		<string>taobao</string>
-		<string>openapp.jdmobile</string>
-		<string>xhsdiscover</string>
-		<string>bilibili</string>
-		<string>snssdk1128</string>
-		<string>orpheus</string>
-		<string>qqmusic</string>
-	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
@@ -52,8 +24,36 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>iosamap</string>
+		<string>baidumap</string>
+		<string>imeituan</string>
+		<string>dianping</string>
+		<string>diditaxi</string>
+		<string>taobao</string>
+		<string>openapp.jdmobile</string>
+		<string>xhsdiscover</string>
+		<string>bilibili</string>
+		<string>snssdk1128</string>
+		<string>orpheus</string>
+		<string>qqmusic</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Used to add events you ask the AI to schedule (meetings, reminders) to your calendar.</string>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>Used to add events you ask the AI to schedule to your calendar.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Used to answer location-aware questions (e.g. local weather, nearby places) when you ask the AI.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose a profile photo from your library</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -68,7 +68,7 @@
 					<key>UISceneConfigurationName</key>
 					<string>flutter</string>
 					<key>UISceneDelegateClassName</key>
-					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+					<string>FlutterSceneDelegate</string>
 					<key>UISceneStoryboardFile</key>
 					<string>Main</string>
 				</dict>
