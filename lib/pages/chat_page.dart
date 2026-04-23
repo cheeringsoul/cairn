@@ -236,6 +236,7 @@ class _ChatPageState extends State<ChatPage> {
     if (text.isEmpty) return;
     _controller.clear();
     _dismissKeyboard();
+    setState(() => _showScrollToBottom = false);
     provider.sendMessage(text);
     _scrollToBottom();
   }
@@ -253,7 +254,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 80), () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,

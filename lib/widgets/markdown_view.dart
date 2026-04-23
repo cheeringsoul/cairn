@@ -56,6 +56,45 @@ MarkdownStyleSheet buildMarkdownStyle(
   );
 }
 
+/// Wraps consecutive lines containing Unicode box-drawing characters
+/// (U+2500–U+257F) in fenced code blocks so [MarkdownBody] renders them
+/// with a monospace font and proper column alignment.
+String _wrapBoxDrawingTables(String md) {
+  final boxRe = RegExp(r'[─-╿]');
+  final lines = md.split('\n');
+  final buf = <String>[];
+  bool inFence = false;
+  bool inBox = false;
+
+  for (final line in lines) {
+    if (line.trimLeft().startsWith('```')) {
+      inFence = !inFence;
+      if (inBox) {
+        buf.add('```');
+        inBox = false;
+      }
+      buf.add(line);
+      continue;
+    }
+    if (inFence) {
+      buf.add(line);
+      continue;
+    }
+
+    final hasBox = boxRe.hasMatch(line);
+    if (hasBox && !inBox) {
+      buf.add('```');
+      inBox = true;
+    } else if (!hasBox && inBox) {
+      buf.add('```');
+      inBox = false;
+    }
+    buf.add(line);
+  }
+  if (inBox) buf.add('```');
+  return buf.join('\n');
+}
+
 /// Selectable markdown block that surfaces a "Lookup" context-menu
 /// action when the user selects a single word.
 ///
@@ -92,7 +131,7 @@ class _LookupSelectableMarkdownState extends State<LookupSelectableMarkdown> {
       child: MarkdownBody(
         // Hide any trailing cairn-meta block the model may have
         // appended. Strips partial blocks during streaming too.
-        data: stripCairnMetaForDisplay(widget.data),
+        data: _wrapBoxDrawingTables(stripCairnMetaForDisplay(widget.data)),
         selectable: false,
         styleSheet: buildMarkdownStyle(context, baseFontSize: widget.baseFontSize),
         onTapLink: (text, href, title) => _openLink(href),
