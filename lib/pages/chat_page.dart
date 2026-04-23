@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -52,6 +54,8 @@ class _ChatPageState extends State<ChatPage> {
   bool _showScrollToBottom = false;
   String? _lastConvId;
   bool _hasSeenConvState = false;
+  SavedItem? _toastItem;
+  Timer? _toastTimer;
 
   @override
   void initState() {
@@ -172,24 +176,14 @@ class _ChatPageState extends State<ChatPage> {
     }
 
     if (!mounted) return;
-    setState(() => _savedMsgIds.add(msg.id));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(l10n.savedToLibrary),
-        duration: const Duration(milliseconds: 1500),
-        action: SnackBarAction(
-          label: l10n.view,
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => SavedItemDetailPage(item: savedItem),
-              ),
-            );
-          },
-        ),
-      ),
-    );
+    setState(() {
+      _savedMsgIds.add(msg.id);
+      _toastItem = savedItem;
+    });
+    _toastTimer?.cancel();
+    _toastTimer = Timer(const Duration(milliseconds: 2500), () {
+      if (mounted) setState(() => _toastItem = null);
+    });
   }
 
   /// Remove a message from the user-facing Library. This does NOT wipe
@@ -267,6 +261,7 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    _toastTimer?.cancel();
     _scrollController.removeListener(_onScroll);
     _controller.dispose();
     _composerFocus.dispose();
@@ -383,6 +378,19 @@ class _ChatPageState extends State<ChatPage> {
                                 child: _ScrollToBottomButton(
                                   onTap: _scrollToBottom,
                                 ),
+                              ),
+                            ),
+                          if (_toastItem != null)
+                            Positioned(
+                              bottom: 8,
+                              left: 16,
+                              right: 16,
+                              child: _SavedToast(
+                                item: _toastItem!,
+                                onDismiss: () {
+                                  _toastTimer?.cancel();
+                                  setState(() => _toastItem = null);
+                                },
                               ),
                             ),
                         ],
@@ -918,6 +926,49 @@ class _EmbeddingMissingBannerState extends State<_EmbeddingMissingBanner> {
             onPressed: () => setState(() => _dismissed = true),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SavedToast extends StatelessWidget {
+  final SavedItem item;
+  final VoidCallback onDismiss;
+  const _SavedToast({required this.item, required this.onDismiss});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
+    return Material(
+      elevation: 4,
+      borderRadius: BorderRadius.circular(10),
+      color: cs.inverseSurface,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 16),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                l10n.savedToLibrary,
+                style: TextStyle(color: cs.onInverseSurface, fontSize: 14),
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                onDismiss();
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SavedItemDetailPage(item: item),
+                  ),
+                );
+              },
+              child: Text(l10n.view,
+                  style: TextStyle(color: cs.inversePrimary)),
+            ),
+          ],
+        ),
       ),
     );
   }
