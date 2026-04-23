@@ -7,7 +7,9 @@ import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
 import '../services/chat_provider.dart';
 import '../services/db/conversation_dao.dart' show ChatSearchResult;
+import '../services/library_export.dart';
 import '../services/library_provider.dart';
+import '../services/markdown_import.dart';
 import '../services/model_service.dart';
 import '../services/persona_provider.dart';
 import '../services/review_provider.dart';
@@ -677,28 +679,37 @@ class _OverlayPaneState extends State<_OverlayPane> {
         children: [
           if (_showSearch)
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
-              child: SizedBox(
-                height: 36,
-                child: TextField(
-                  controller: _searchCtrl,
-                  onChanged: _onSearchChanged,
-                  decoration: InputDecoration(
-                    hintText: _searchHint(l10n),
-                    prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                    prefixIconConstraints: const BoxConstraints(
-                        minWidth: 36, minHeight: 36),
-                    isDense: true,
-                    filled: true,
-                    fillColor: cs.onSurface.withValues(alpha: 0.04),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(18),
-                      borderSide: BorderSide.none,
+              padding: const EdgeInsets.fromLTRB(14, 10, 6, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 36,
+                      child: TextField(
+                        controller: _searchCtrl,
+                        onChanged: _onSearchChanged,
+                        decoration: InputDecoration(
+                          hintText: _searchHint(l10n),
+                          prefixIcon:
+                              const Icon(Icons.search_rounded, size: 18),
+                          prefixIconConstraints: const BoxConstraints(
+                              minWidth: 36, minHeight: 36),
+                          isDense: true,
+                          filled: true,
+                          fillColor: cs.onSurface.withValues(alpha: 0.04),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(18),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                        ),
+                      ),
                     ),
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
                   ),
-                ),
+                  if (widget.kind == _OverlayKind.library)
+                    _LibraryActionsMenu(l10n: l10n),
+                ],
               ),
             ),
           Expanded(
@@ -733,6 +744,86 @@ class _OverlayPaneState extends State<_OverlayPane> {
       case _OverlayKind.report:
         return const ReportPage(embedded: true);
     }
+  }
+}
+
+/// Import / export actions for the desktop Library overlay. Mirrors the
+/// PopupMenuButton in the mobile Library AppBar (see library_page.dart).
+class _LibraryActionsMenu extends StatelessWidget {
+  final AppLocalizations l10n;
+  const _LibraryActionsMenu({required this.l10n});
+
+  Future<void> _import(BuildContext context) async {
+    final library = context.read<LibraryProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final imported = await MarkdownImport(library).pickAndImport();
+      if (imported.isEmpty) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.importedCount(imported.length))),
+      );
+      library.analyzeItems(imported);
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.importFailed('$e'))),
+      );
+    }
+  }
+
+  Future<void> _export(BuildContext context, String format) async {
+    final library = context.read<LibraryProvider>();
+    await exportLibraryItems(
+      context: context,
+      items: library.items,
+      format: format,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return PopupMenuButton<String>(
+      icon: Icon(Icons.more_horiz_rounded,
+          size: 20, color: cs.onSurface.withValues(alpha: 0.55)),
+      tooltip: '',
+      onSelected: (v) {
+        if (v == 'import') _import(context);
+        if (v == 'export_md') _export(context, 'md');
+        if (v == 'export_json') _export(context, 'json');
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          value: 'import',
+          child: Row(
+            children: [
+              const Icon(Icons.file_download_outlined, size: 18),
+              const SizedBox(width: 10),
+              Text(l10n.importMarkdown),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'export_md',
+          child: Row(
+            children: [
+              const Icon(Icons.file_upload_outlined, size: 18),
+              const SizedBox(width: 10),
+              Text(l10n.exportAsMarkdown),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'export_json',
+          child: Row(
+            children: [
+              const Icon(Icons.data_object_rounded, size: 18),
+              const SizedBox(width: 10),
+              Text(l10n.exportAsJson),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
 
