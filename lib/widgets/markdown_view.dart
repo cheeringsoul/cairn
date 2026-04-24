@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:highlight/highlight.dart' show highlight, Node;
+import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/app_localizations.dart';
@@ -95,6 +97,116 @@ String _wrapBoxDrawingTables(String md) {
   return buf.join('\n');
 }
 
+// ─── Syntax-highlighted code block builder ───────────────────────────
+
+Map<String, TextStyle> _syntaxTheme(ColorScheme cs) {
+  final dark = cs.brightness == Brightness.dark;
+  return {
+    'keyword': TextStyle(color: dark ? const Color(0xFFC678DD) : const Color(0xFF7B30D0)),
+    'built_in': TextStyle(color: dark ? const Color(0xFF61AFEF) : const Color(0xFF2F6CB3)),
+    'type': TextStyle(color: dark ? const Color(0xFFE5C07B) : const Color(0xFFC18401)),
+    'title': TextStyle(color: dark ? const Color(0xFF61AFEF) : const Color(0xFF2F6CB3)),
+    'function': TextStyle(color: dark ? const Color(0xFF61AFEF) : const Color(0xFF2F6CB3)),
+    'string': TextStyle(color: dark ? const Color(0xFF98C379) : const Color(0xFF0B7B3E)),
+    'comment': TextStyle(color: dark ? const Color(0xFF5C6370) : const Color(0xFF8E908C), fontStyle: FontStyle.italic),
+    'doctag': TextStyle(color: dark ? const Color(0xFF5C6370) : const Color(0xFF8E908C), fontStyle: FontStyle.italic),
+    'number': TextStyle(color: dark ? const Color(0xFFD19A66) : const Color(0xFFB76C00)),
+    'literal': TextStyle(color: dark ? const Color(0xFFD19A66) : const Color(0xFFB76C00)),
+    'attr': TextStyle(color: dark ? const Color(0xFFD19A66) : const Color(0xFFB76C00)),
+    'variable': TextStyle(color: dark ? const Color(0xFFE06C75) : const Color(0xFFE45649)),
+    'meta': TextStyle(color: dark ? const Color(0xFF61AFEF) : const Color(0xFF2F6CB3)),
+    'symbol': TextStyle(color: dark ? const Color(0xFF56B6C2) : const Color(0xFF0184BC)),
+    'regexp': TextStyle(color: dark ? const Color(0xFF56B6C2) : const Color(0xFF0184BC)),
+  };
+}
+
+List<TextSpan> _nodesToSpans(
+    List<Node>? nodes, Map<String, TextStyle> theme, TextStyle fallback) {
+  if (nodes == null) return [];
+  final spans = <TextSpan>[];
+  for (final node in nodes) {
+    if (node.children != null) {
+      spans.add(TextSpan(
+        style: node.className != null ? theme[node.className] : null,
+        children: _nodesToSpans(node.children, theme, fallback),
+      ));
+    } else {
+      spans.add(TextSpan(
+        text: node.value,
+        style: node.className != null ? theme[node.className] : fallback,
+      ));
+    }
+  }
+  return spans;
+}
+
+class _CodeBlockBuilder extends MarkdownElementBuilder {
+  @override
+  bool isBlockElement() => true;
+
+  @override
+  Widget? visitElementAfterWithContext(
+    BuildContext context,
+    md.Element element,
+    TextStyle? preferredStyle,
+    TextStyle? parentStyle,
+  ) {
+    final cs = Theme.of(context).colorScheme;
+    final code = element.textContent.trimRight();
+
+    String? language;
+    for (final child in element.children ?? const <md.Node>[]) {
+      if (child is md.Element && child.tag == 'code') {
+        final cls = child.attributes['class'];
+        if (cls != null && cls.startsWith('language-')) {
+          language = cls.substring('language-'.length);
+        }
+        break;
+      }
+    }
+
+    final baseStyle = TextStyle(
+      fontFamily: 'monospace',
+      fontSize: preferredStyle?.fontSize ?? 13.5,
+      color: cs.onSurface,
+      height: 1.5,
+    );
+
+    TextSpan span;
+    if (language != null) {
+      try {
+        final result = highlight.parse(code, language: language);
+        span = TextSpan(
+          style: baseStyle,
+          children: _nodesToSpans(result.nodes, _syntaxTheme(cs), baseStyle),
+        );
+      } catch (_) {
+        span = TextSpan(text: code, style: baseStyle);
+      }
+    } else {
+      span = TextSpan(text: code, style: baseStyle);
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: cs.onSurface.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Text.rich(span, softWrap: false),
+      ),
+    );
+  }
+}
+
+final _codeBlockBuilder = _CodeBlockBuilder();
+
+Map<String, MarkdownElementBuilder> get markdownBuilders =>
+    {'pre': _codeBlockBuilder};
+
 /// Selectable markdown block that surfaces a "Lookup" context-menu
 /// action when the user selects a single word.
 ///
@@ -129,11 +241,10 @@ class _LookupSelectableMarkdownState extends State<LookupSelectableMarkdown> {
       onSelectionChanged: (c) => _selected = c?.plainText.trim() ?? '',
       contextMenuBuilder: _buildContextMenu,
       child: MarkdownBody(
-        // Hide any trailing cairn-meta block the model may have
-        // appended. Strips partial blocks during streaming too.
         data: _wrapBoxDrawingTables(stripCairnMetaForDisplay(widget.data)),
         selectable: false,
         styleSheet: buildMarkdownStyle(context, baseFontSize: widget.baseFontSize),
+        builders: markdownBuilders,
         onTapLink: (text, href, title) => _openLink(href),
       ),
     );

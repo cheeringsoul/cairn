@@ -243,11 +243,17 @@ class _MacDesktopShellState extends State<MacDesktopShell> {
                       if (showOverlay) _vDivider(context),
                       Expanded(
                         child: reviewMode
-                            ? ReviewPage(
-                                key: const ValueKey('desktop-review'),
-                                currentIndex: -1,
-                                onNavigate: (_) {},
-                                embedded: true,
+                            ? Center(
+                                child: ConstrainedBox(
+                                  constraints:
+                                      const BoxConstraints(maxWidth: 600),
+                                  child: ReviewPage(
+                                    key: const ValueKey('desktop-review'),
+                                    currentIndex: -1,
+                                    onNavigate: (_) {},
+                                    embedded: true,
+                                  ),
+                                ),
                               )
                             : const _ChatPane(),
                       ),
@@ -1256,10 +1262,15 @@ class _MessageList extends StatelessWidget {
       itemCount: messages.length,
       itemBuilder: (ctx, i) {
         final m = messages[i];
-        return MessageBubble(
-          message: m,
-          isLastAssistant:
-              i == messages.length - 1 && m.role == 'assistant',
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: MessageBubble(
+              message: m,
+              isLastAssistant:
+                  i == messages.length - 1 && m.role == 'assistant',
+            ),
+          ),
         );
       },
     );

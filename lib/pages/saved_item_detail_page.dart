@@ -235,6 +235,7 @@ class _SavedItemDetailPageState extends State<SavedItemDetailPage> {
                 data: _notesController.text,
                 selectable: false,
                 styleSheet: buildMarkdownStyle(context, baseFontSize: 14),
+                builders: markdownBuilders,
               ),
             ),
           if (hasSource) ...[
