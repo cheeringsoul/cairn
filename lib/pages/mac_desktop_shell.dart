@@ -1262,15 +1262,10 @@ class _MessageList extends StatelessWidget {
       itemCount: messages.length,
       itemBuilder: (ctx, i) {
         final m = messages[i];
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
-            child: MessageBubble(
-              message: m,
-              isLastAssistant:
-                  i == messages.length - 1 && m.role == 'assistant',
-            ),
-          ),
+        return MessageBubble(
+          message: m,
+          isLastAssistant:
+              i == messages.length - 1 && m.role == 'assistant',
         );
       },
     );
