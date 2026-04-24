@@ -5,9 +5,11 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:http/http.dart' show runWithClient;
 import 'package:provider/provider.dart';
 
 import 'l10n/app_localizations.dart';
+import 'services/http_client.dart';
 
 import 'pages/chat_page.dart';
 import 'pages/mac_desktop_shell.dart';
@@ -34,9 +36,8 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService.init();
-  // Extract (first launch) & open the offline dictionary eagerly.
   DictProvider.instance.ensureLoaded();
-  runApp(const CairnApp());
+  runWithClient(() => runApp(const CairnApp()), createPlatformClient);
 }
 
 class CairnApp extends StatelessWidget {

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/cairn_meta.dart';
+import '../services/chat_provider.dart';
 import '../services/db/database.dart';
 import '../services/notification_service.dart';
 import '../services/review_provider.dart';
@@ -79,6 +80,7 @@ class _ReviewPageState extends State<ReviewPage> {
                   onStopReview: () =>
                       review.disableReview(review.dueItems.first.id),
                   intervals: review.previewIntervals(review.dueItems.first),
+                  embedded: widget.embedded,
                 ),
     );
   }
@@ -113,12 +115,14 @@ class _ReviewCard extends StatefulWidget {
   final VoidCallback onSkip;
   final VoidCallback onStopReview;
   final Map<ReviewGrade, int> intervals;
+  final bool embedded;
   const _ReviewCard({
     required this.item,
     required this.onRate,
     required this.onSkip,
     required this.onStopReview,
     required this.intervals,
+    this.embedded = false,
   });
 
   @override
@@ -127,12 +131,14 @@ class _ReviewCard extends StatefulWidget {
 
 class _ReviewCardState extends State<_ReviewCard> {
   bool _revealed = false;
+  bool _showDetail = false;
 
   @override
   void didUpdateWidget(covariant _ReviewCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.item.id != widget.item.id) {
       _revealed = false;
+      _showDetail = false;
     }
   }
 
@@ -212,18 +218,70 @@ class _ReviewCardState extends State<_ReviewCard> {
                                     .toList(),
                               ),
                             ],
+                            if (_showDetail) ...[
+                              if (item.userNotes.isNotEmpty) ...[
+                                const SizedBox(height: 20),
+                                Row(
+                                  children: [
+                                    Icon(Icons.edit_note_rounded,
+                                        size: 16,
+                                        color: cs.onSurface
+                                            .withValues(alpha: 0.6)),
+                                    const SizedBox(width: 6),
+                                    Text(l10n.myNotes,
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: cs.onSurface
+                                                .withValues(alpha: 0.6))),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: cs.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border(
+                                      left: BorderSide(
+                                          color: cs.primary, width: 3),
+                                    ),
+                                  ),
+                                  child: LookupSelectableMarkdown(
+                                    data: item.userNotes,
+                                    baseFontSize: 14,
+                                  ),
+                                ),
+                              ],
+                              if (item.sourceConvId != null ||
+                                  (item.sourceHighlight?.isNotEmpty ??
+                                      false)) ...[
+                                const SizedBox(height: 20),
+                                _InlineSourceBlock(item: item),
+                              ],
+                            ],
                             const SizedBox(height: 16),
                             Align(
                               alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) =>
-                                          SavedItemDetailPage(item: item)),
-                                ),
-                                child: Text(l10n.viewFullItem),
-                              ),
+                              child: widget.embedded && !_showDetail
+                                  ? TextButton(
+                                      onPressed: () => setState(
+                                          () => _showDetail = true),
+                                      child: Text(l10n.viewFullItem),
+                                    )
+                                  : widget.embedded
+                                      ? const SizedBox.shrink()
+                                      : TextButton(
+                                          onPressed: () => Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                                builder: (_) =>
+                                                    SavedItemDetailPage(
+                                                        item: item)),
+                                          ),
+                                          child: Text(l10n.viewFullItem),
+                                        ),
                             ),
                           ],
                         ),
@@ -361,6 +419,72 @@ class _GradeButton extends StatelessWidget {
                 style: TextStyle(
                     fontSize: 10,
                     color: color.withValues(alpha: 0.7))),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InlineSourceBlock extends StatelessWidget {
+  final SavedItem item;
+  const _InlineSourceBlock({required this.item});
+
+  void _navigateToSource(BuildContext context) {
+    final convId = item.sourceConvId;
+    if (convId == null) return;
+    final chat = context.read<ChatProvider>();
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    chat.navigateToMessage(convId, item.sourceMsgId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
+    final tappable = item.sourceConvId != null;
+    return GestureDetector(
+      onTap: tappable ? () => _navigateToSource(context) : null,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          border: Border.all(color: cs.onSurface.withValues(alpha: 0.15)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.link_rounded,
+                    size: 16, color: cs.onSurface.withValues(alpha: 0.6)),
+                const SizedBox(width: 6),
+                Text(l10n.source,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: cs.onSurface.withValues(alpha: 0.6))),
+                const Spacer(),
+                if (tappable)
+                  Icon(Icons.open_in_new_rounded,
+                      size: 14, color: cs.primary.withValues(alpha: 0.7)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (item.sourceHighlight != null &&
+                item.sourceHighlight!.isNotEmpty) ...[
+              Text('"${item.sourceHighlight}"',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontStyle: FontStyle.italic,
+                      color: cs.onSurface.withValues(alpha: 0.8))),
+              const SizedBox(height: 6),
+            ],
+            if (item.sourceConvId != null)
+              Text(l10n.tapToOpenSource,
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: cs.primary.withValues(alpha: 0.7))),
           ],
         ),
       ),

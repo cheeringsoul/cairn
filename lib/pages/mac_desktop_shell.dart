@@ -189,12 +189,12 @@ class _MacDesktopShellState extends State<MacDesktopShell> {
 
   Widget _buildShell(BuildContext context) {
     const overlayWidth = 360.0;
+    final reviewMode = _overlay == _OverlayKind.review;
+    final showOverlay = _overlay != null && !reviewMode;
     return Scaffold(
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Sidebar flows under the transparent macOS titlebar; its top
-          // padding already clears the traffic-light buttons.
           SizedBox(
             width: 220,
             child: _Sidebar(
@@ -207,9 +207,6 @@ class _MacDesktopShellState extends State<MacDesktopShell> {
             ),
           ),
           _vDivider(context),
-          // Right area holds the shared top bar; below it, an optional
-          // slide-out pane (library / review / …) appears to the left
-          // of the chat, shrinking the chat without resizing the window.
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -227,17 +224,14 @@ class _MacDesktopShellState extends State<MacDesktopShell> {
                       AnimatedContainer(
                         duration: const Duration(milliseconds: 220),
                         curve: Curves.easeOutCubic,
-                        width: _overlay == null ? 0 : overlayWidth,
-                        child: _overlay == null
+                        width: showOverlay ? overlayWidth : 0,
+                        child: !showOverlay
                             ? const SizedBox.shrink()
                             : ClipRect(
                                 child: OverflowBox(
                                   alignment: Alignment.centerLeft,
                                   minWidth: overlayWidth,
                                   maxWidth: overlayWidth,
-                                  // Key on the kind so switching between
-                                  // Library/Review/… rebuilds the pane's
-                                  // nested Navigator with the new page.
                                   child: _OverlayPane(
                                     key: ValueKey(_overlay),
                                     kind: _overlay!,
@@ -246,8 +240,17 @@ class _MacDesktopShellState extends State<MacDesktopShell> {
                                 ),
                               ),
                       ),
-                      if (_overlay != null) _vDivider(context),
-                      const Expanded(child: _ChatPane()),
+                      if (showOverlay) _vDivider(context),
+                      Expanded(
+                        child: reviewMode
+                            ? ReviewPage(
+                                key: const ValueKey('desktop-review'),
+                                currentIndex: -1,
+                                onNavigate: (_) {},
+                                embedded: true,
+                              )
+                            : const _ChatPane(),
+                      ),
                     ],
                   ),
                 ),
@@ -736,8 +739,7 @@ class _OverlayPaneState extends State<_OverlayPane> {
         return LibraryPage(
             currentIndex: -1, onNavigate: (_) {}, embedded: true);
       case _OverlayKind.review:
-        return ReviewPage(
-            currentIndex: -1, onNavigate: (_) {}, embedded: true);
+        return const SizedBox.shrink();
       case _OverlayKind.connections:
         return ConnectionsPage(
             currentIndex: -1, onNavigate: (_) {}, embedded: true);
@@ -1153,7 +1155,6 @@ class _TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final review = context.watch<ReviewProvider>();
     return Container(
       height: 44,
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1180,7 +1181,7 @@ class _TopBar extends StatelessWidget {
             onTap: onForward,
           ),
           const Spacer(),
-          _AvatarBtn(badge: review.dueCount),
+          _AvatarBtn(badge: 0),
         ],
       ),
     );

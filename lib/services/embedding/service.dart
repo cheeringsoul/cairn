@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../constants.dart';
+import '../http_client.dart';
 import '../db/database.dart';
 import '../llm/provider_factory.dart';
 import '../llm/llm_provider.dart';
@@ -89,7 +90,7 @@ class EmbeddingService {
   final http.Client _http;
 
   EmbeddingService({http.Client? httpClient})
-      : _http = httpClient ?? http.Client();
+      : _http = httpClient ?? createPlatformClient();
 
   // ---- core embed call ----
 

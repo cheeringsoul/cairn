@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../http_client.dart';
 import 'llm_provider.dart';
 
 /// Anthropic Messages API adapter.
@@ -55,7 +56,7 @@ class AnthropicProvider implements LlmProvider {
     request.headers['Accept'] = 'text/event-stream';
     request.body = jsonEncode(body);
 
-    final response = await http.Client().send(request);
+    final response = await createPlatformClient().send(request);
     if (response.statusCode != 200) {
       final responseBody = await response.stream.bytesToString();
       throw LlmException(
