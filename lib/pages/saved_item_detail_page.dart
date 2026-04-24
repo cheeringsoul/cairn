@@ -25,7 +25,14 @@ import '../widgets/markdown_view.dart';
 ///     are present
 class SavedItemDetailPage extends StatefulWidget {
   final SavedItem item;
-  const SavedItemDetailPage({super.key, required this.item});
+  final VoidCallback? onClose;
+  final ValueChanged<SavedItem>? onItemSelected;
+  const SavedItemDetailPage({
+    super.key,
+    required this.item,
+    this.onClose,
+    this.onItemSelected,
+  });
 
   @override
   State<SavedItemDetailPage> createState() => _SavedItemDetailPageState();
@@ -82,6 +89,12 @@ class _SavedItemDetailPageState extends State<SavedItemDetailPage> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: widget.onClose != null
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_rounded),
+                onPressed: widget.onClose,
+              )
+            : null,
         actions: [
           PopupMenuButton<String>(
             onSelected: (v) async {
@@ -141,7 +154,11 @@ class _SavedItemDetailPageState extends State<SavedItemDetailPage> {
                 );
                 if (ok == true) {
                   await library.deleteItem(item.id);
-                  navigator.pop();
+                  if (widget.onClose != null) {
+                    widget.onClose!();
+                  } else {
+                    navigator.pop();
+                  }
                 }
               }
             },
@@ -240,10 +257,13 @@ class _SavedItemDetailPageState extends State<SavedItemDetailPage> {
             ),
           if (hasSource) ...[
             const SizedBox(height: 20),
-            _SourceBlock(item: item),
+            _SourceBlock(item: item, onClose: widget.onClose),
           ],
           const SizedBox(height: 20),
-          _RelatedKnowledge(itemId: item.id),
+          _RelatedKnowledge(
+            itemId: item.id,
+            onItemSelected: widget.onItemSelected,
+          ),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
@@ -371,15 +391,18 @@ class _MetaChips extends StatelessWidget {
 
 class _SourceBlock extends StatelessWidget {
   final SavedItem item;
-  const _SourceBlock({required this.item});
+  final VoidCallback? onClose;
+  const _SourceBlock({required this.item, this.onClose});
 
   void _navigateToSource(BuildContext context) {
     final convId = item.sourceConvId;
     if (convId == null) return;
     final chat = context.read<ChatProvider>();
-    // Pop all pushed routes (detail page, etc.) back to the root shell.
-    Navigator.of(context).popUntil((route) => route.isFirst);
-    // Open the conversation and scroll to the source message.
+    if (onClose != null) {
+      onClose!();
+    } else {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
     chat.navigateToMessage(convId, item.sourceMsgId);
   }
 
@@ -439,7 +462,8 @@ class _SourceBlock extends StatelessWidget {
 
 class _RelatedKnowledge extends StatefulWidget {
   final String itemId;
-  const _RelatedKnowledge({required this.itemId});
+  final ValueChanged<SavedItem>? onItemSelected;
+  const _RelatedKnowledge({required this.itemId, this.onItemSelected});
 
   @override
   State<_RelatedKnowledge> createState() => _RelatedKnowledgeState();
@@ -492,6 +516,7 @@ class _RelatedKnowledgeState extends State<_RelatedKnowledge> {
         ...(_related!.map((r) => _RelatedItemTile(
               item: r.item,
               score: r.score,
+              onItemSelected: widget.onItemSelected,
             ))),
       ],
     );
@@ -501,7 +526,12 @@ class _RelatedKnowledgeState extends State<_RelatedKnowledge> {
 class _RelatedItemTile extends StatelessWidget {
   final SavedItem item;
   final double score;
-  const _RelatedItemTile({required this.item, required this.score});
+  final ValueChanged<SavedItem>? onItemSelected;
+  const _RelatedItemTile({
+    required this.item,
+    required this.score,
+    this.onItemSelected,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -518,12 +548,16 @@ class _RelatedItemTile extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
           onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => SavedItemDetailPage(item: item),
-              ),
-            );
+            if (onItemSelected != null) {
+              onItemSelected!(item);
+            } else {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => SavedItemDetailPage(item: item),
+                ),
+              );
+            }
           },
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

@@ -26,11 +26,13 @@ class LibraryPage extends StatefulWidget {
   final int currentIndex;
   final ValueChanged<int> onNavigate;
   final bool embedded;
+  final ValueChanged<SavedItem>? onItemSelected;
   const LibraryPage({
     super.key,
     required this.currentIndex,
     required this.onNavigate,
     this.embedded = false,
+    this.onItemSelected,
   });
 
   @override
@@ -336,13 +338,19 @@ class _LibraryPageState extends State<LibraryPage> {
                                     _selected.add(item.id);
                                   }
                                 }),
-                                child: _ItemCard(item: item),
+                                child: _ItemCard(
+                                  item: item,
+                                  onItemSelected: widget.onItemSelected,
+                                ),
                               ),
                             ),
                           ],
                         );
                       }
-                      return _ItemCard(item: item);
+                      return _ItemCard(
+                        item: item,
+                        onItemSelected: widget.onItemSelected,
+                      );
                     },
                   ),
           ),
@@ -580,7 +588,8 @@ class _LibraryPageState extends State<LibraryPage> {
 
 class _ItemCard extends StatelessWidget {
   final SavedItem item;
-  const _ItemCard({required this.item});
+  final ValueChanged<SavedItem>? onItemSelected;
+  const _ItemCard({required this.item, this.onItemSelected});
 
   Future<void> _confirmDeleteItem(
       BuildContext context, SavedItem item) async {
@@ -625,11 +634,15 @@ class _ItemCard extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
           onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => SavedItemDetailPage(item: item)),
-            );
+            if (onItemSelected != null) {
+              onItemSelected!(item);
+            } else {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => SavedItemDetailPage(item: item)),
+              );
+            }
           },
           onLongPress: () => _confirmDeleteItem(context, item),
           child: Padding(

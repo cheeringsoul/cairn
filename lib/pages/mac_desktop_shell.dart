@@ -17,6 +17,7 @@ import '../services/settings_provider.dart';
 import '../services/theme_provider.dart';
 import '../services/db/database.dart';
 import '../widgets/message_bubble.dart';
+import 'saved_item_detail_page.dart';
 import '../widgets/persona_editor_sheet.dart';
 import '../widgets/shared.dart';
 import 'connections_page.dart';
@@ -49,6 +50,7 @@ Widget _vDivider(BuildContext context) {
 
 class _MacDesktopShellState extends State<MacDesktopShell> {
   _OverlayKind? _overlay;
+  SavedItem? _detailItem;
   // Ordered history of conversation ids the user has selected from the
   // overlay. `_back` is the undo stack, `_forward` is the redo stack.
   // When both are empty and overlay is open, `<` collapses the pane.
@@ -138,6 +140,7 @@ class _MacDesktopShellState extends State<MacDesktopShell> {
     if (_overlay != null) {
       setState(() {
         _overlay = null;
+        _detailItem = null;
         _back.clear();
         _forward.clear();
       });
@@ -236,6 +239,8 @@ class _MacDesktopShellState extends State<MacDesktopShell> {
                                     key: ValueKey(_overlay),
                                     kind: _overlay!,
                                     onClose: _closeOverlay,
+                                    onItemSelected: (item) =>
+                                        setState(() => _detailItem = item),
                                   ),
                                 ),
                               ),
@@ -255,7 +260,16 @@ class _MacDesktopShellState extends State<MacDesktopShell> {
                                   ),
                                 ),
                               )
-                            : const _ChatPane(),
+                            : _detailItem != null
+                                ? SavedItemDetailPage(
+                                    key: ValueKey(_detailItem!.id),
+                                    item: _detailItem!,
+                                    onClose: () =>
+                                        setState(() => _detailItem = null),
+                                    onItemSelected: (item) =>
+                                        setState(() => _detailItem = item),
+                                  )
+                                : const _ChatPane(),
                       ),
                     ],
                   ),
@@ -607,7 +621,13 @@ class _SidebarItemState extends State<_SidebarItem> {
 class _OverlayPane extends StatefulWidget {
   final _OverlayKind kind;
   final VoidCallback onClose;
-  const _OverlayPane({super.key, required this.kind, required this.onClose});
+  final ValueChanged<SavedItem>? onItemSelected;
+  const _OverlayPane({
+    super.key,
+    required this.kind,
+    required this.onClose,
+    this.onItemSelected,
+  });
 
   @override
   State<_OverlayPane> createState() => _OverlayPaneState();
@@ -743,7 +763,11 @@ class _OverlayPaneState extends State<_OverlayPane> {
         );
       case _OverlayKind.library:
         return LibraryPage(
-            currentIndex: -1, onNavigate: (_) {}, embedded: true);
+          currentIndex: -1,
+          onNavigate: (_) {},
+          embedded: true,
+          onItemSelected: widget.onItemSelected,
+        );
       case _OverlayKind.review:
         return const SizedBox.shrink();
       case _OverlayKind.connections:
